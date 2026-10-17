@@ -1,0 +1,6 @@
+{
+  "framework": null,
+  "installCommand": "",
+  "buildCommand": "mkdir -p public && cp index.html public/ && printf 'window.API_BASE = \"%s\";\\n' \"$API_BASE\" > public/config.js",
+  "outputDirectory": "public"
+}

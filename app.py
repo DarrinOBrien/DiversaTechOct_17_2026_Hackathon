@@ -35,7 +35,8 @@ def split_reply(text: str) -> tuple[str, str]:
     return reasoning, suggestion
 
 app = Flask(__name__)
-CORS(app)  # open CORS for local development only
+# ALLOWED_ORIGINS: comma-separated frontend origins (e.g. the Vercel URL); "*" if unset.
+CORS(app, origins=os.environ.get("ALLOWED_ORIGINS", "*").split(","))
 
 # Reads ANTHROPIC_API_KEY from the environment; never hardcoded.
 client = anthropic.Anthropic()

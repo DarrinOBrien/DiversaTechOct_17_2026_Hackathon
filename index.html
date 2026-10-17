@@ -484,6 +484,7 @@
   </aside>
 </div>
 
+<script src="config.js"></script>
 <script>
 (function () {
   const BRUSH_COLOR = '#000';
@@ -538,10 +539,9 @@
   const tutShow = document.getElementById('tut-show');
   const tutExit = document.getElementById('tut-exit');
 
-  // Local backend when opened from disk or localhost; the Render backend when deployed (e.g. on Vercel).
-  const RENDER_API_BASE = 'https://diversatechoct-17-2026-hackathon.onrender.com';
-  const IS_LOCAL = ['', 'localhost', '127.0.0.1'].includes(location.hostname);
-  const API_BASE = IS_LOCAL ? 'http://127.0.0.1:5001' : RENDER_API_BASE;
+  // config.js (written by the Vercel build from the API_BASE env var) sets window.API_BASE;
+  // without it, e.g. when opened from disk, use the local backend.
+  const API_BASE = (window.API_BASE || 'http://127.0.0.1:5001').replace(/\/+$/, '');
   const API_URL = `${API_BASE}/api/reason`;
   const REF_API_URL = `${API_BASE}/api/reference`;
   const MAX_CONTEXT_TURNS = 3;
