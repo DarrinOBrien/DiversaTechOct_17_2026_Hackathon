@@ -544,5 +544,7 @@ def tutorial():
     return jsonify({"steps": out})
 
 if __name__ == "__main__":
-    # Not 5000: macOS AirPlay Receiver occupies it.
-    app.run(host="127.0.0.1", port=5001, debug=True)
+    # Hosts like Render set PORT and need 0.0.0.0; locally use 127.0.0.1:5001
+    # (not 5000: macOS AirPlay Receiver occupies it).
+    port = os.environ.get("PORT")
+    app.run(host="0.0.0.0" if port else "127.0.0.1", port=int(port or 5001), debug=not port)
