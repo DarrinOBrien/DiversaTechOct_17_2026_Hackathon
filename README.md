@@ -47,6 +47,7 @@ Every action is recorded in the **turn log** (proposer, executor, text, canvas t
   - Eraser that removes pixels, so it can erase part of a stroke.
   - Select / move: click to select a whole AI drawing; drag a box to select exactly what is inside it (strokes are split at the box edge); Delete removes the selection; Escape deselects.
   - Mark region, which sets the target area for incremental AI drawing.
+  - Background fill colour for the whole canvas (the eraser reveals it; White resets it). It is included in everything sent to Claude.
   - Undo for every action (Cmd/Ctrl+Z), and Clear (which can also be undone).
 - **AI draw modes:** *Incremental* replaces only the marked region. *Overwrite* replaces the whole canvas.
 - **Colour or black-and-white** references (Colour checkbox).

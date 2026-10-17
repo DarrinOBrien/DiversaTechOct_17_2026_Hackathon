@@ -56,7 +56,7 @@
   #ref-input { width: 100%; padding: 6px 8px; font: 13px/1.4 system-ui, sans-serif; border: 1px solid #888; border-radius: 4px; resize: vertical; }
   #ref-hint { margin: 6px 0 0; font-size: 12px; color: #666; }
   #ref-actions { display: flex; align-items: center; gap: 10px; font-size: 13px; }
-  #pen-color { width: 32px; height: 28px; padding: 0 2px; border: 1px solid #888; border-radius: 4px; background: #fafafa; }
+  #pen-color, #bg-color { width: 32px; height: 28px; padding: 0 2px; border: 1px solid #888; border-radius: 4px; background: #fafafa; }
   #ref-result { margin-top: 10px; font-size: 14px; }
   #ref-result img { display: block; max-width: 100%; height: auto; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
   #ref-result .error { color: #b00020; }
@@ -122,6 +122,10 @@
   <span id="size-val">4</span>
   <input id="pen-color" type="color" value="#000000" title="Pen colour">
   <span class="tb-sep"></span>
+  <label for="bg-color">Background</label>
+  <input id="bg-color" type="color" value="#ffffff" title="Fill the whole canvas background">
+  <button id="bg-reset" title="Reset the background to white">White</button>
+  <span class="tb-sep"></span>
   <label for="mode">AI draw mode</label>
   <select id="mode">
     <option value="overwrite">Overwrite</option>
@@ -162,6 +166,8 @@
   const sizeInput = document.getElementById('size');
   const sizeVal = document.getElementById('size-val');
   const penColor = document.getElementById('pen-color');
+  const bgColor = document.getElementById('bg-color');
+  const bgReset = document.getElementById('bg-reset');
   const refColor = document.getElementById('ref-color');
   const selBox = document.getElementById('sel-box');
   const marqueeBox = document.getElementById('marquee');
@@ -207,7 +213,7 @@
     off.width = THUMB_WIDTH;
     off.height = Math.max(1, Math.round(THUMB_WIDTH * canvas.height / canvas.width));
     const octx = off.getContext('2d');
-    octx.fillStyle = '#fff';
+    octx.fillStyle = background;
     octx.fillRect(0, 0, off.width, off.height);
     octx.drawImage(canvas, 0, 0, off.width, off.height);
     return off.toDataURL('image/png');
@@ -275,8 +281,26 @@
   let selection = new Set();   // indices into items (select tool)
   let drag = null;             // select tool: {mode: 'move', start, offset} or {mode: 'marquee', start, rect}
 
+  // Background colour of the whole canvas. It is shown behind the drawing (so the
+  // eraser reveals it) and painted into every export; undo restores it too.
+  let background = '#ffffff';
+
+  function applyBackground() {
+    canvas.style.background = background;
+    bgColor.value = background;
+  }
+
+  function setBackground(color) {
+    if (color === background) return;
+    undoStack.push({ items: items, background: background });
+    background = color;
+    applyBackground();
+    updateButtons();
+    addTurn('human', 'human', 'Human filled the background with ' + color + '.');
+  }
+
   function commit(next, keepSelection) {
-    undoStack.push(items);
+    undoStack.push({ items: items, background: background });
     items = next;
     if (!keepSelection) selection = new Set();
     updateSelectionBox();
@@ -286,7 +310,10 @@
 
   function undo() {
     if (!undoStack.length) return;
-    items = undoStack.pop();
+    const prev = undoStack.pop();
+    items = prev.items;
+    background = prev.background;
+    applyBackground();
     selection = new Set();
     updateSelectionBox();
     redraw();
@@ -1042,7 +1069,7 @@
     const full = document.createElement('canvas');
     full.width = Math.round(cssW * k); full.height = Math.round(cssH * k);
     const fctx = full.getContext('2d');
-    fctx.fillStyle = '#fff';
+    fctx.fillStyle = background;
     fctx.fillRect(0, 0, full.width, full.height);
     fctx.drawImage(canvas, 0, 0, full.width, full.height);
     if (incremental) {
@@ -1066,7 +1093,7 @@
       const crop = document.createElement('canvas');
       crop.width = Math.max(1, Math.round(area.w * kc)); crop.height = Math.max(1, Math.round(area.h * kc));
       const cctx = crop.getContext('2d');
-      cctx.fillStyle = '#fff';
+      cctx.fillStyle = background;
       cctx.fillRect(0, 0, crop.width, crop.height);
       cctx.drawImage(canvas, area.x * dpr, area.y * dpr, area.w * dpr, area.h * dpr, 0, 0, crop.width, crop.height);
       out.region_image_base64 = crop.toDataURL('image/png');
@@ -1119,13 +1146,13 @@
     }
   }
 
-  // Export on a white background so transparent pixels don't read as black.
+  // Export on the background colour so transparent pixels don't read as black.
   function canvasToBase64() {
     const off = document.createElement('canvas');
     off.width = canvas.width;
     off.height = canvas.height;
     const octx = off.getContext('2d');
-    octx.fillStyle = '#fff';
+    octx.fillStyle = background;
     octx.fillRect(0, 0, off.width, off.height);
     octx.drawImage(canvas, 0, 0);
     return off.toDataURL('image/png');
@@ -1307,6 +1334,11 @@
     current = null;
     commit([]);   // undoable
   });
+
+  // Live preview while picking; the fill is committed (one undo step) when the picker closes.
+  bgColor.addEventListener('input', function () { canvas.style.background = bgColor.value; });
+  bgColor.addEventListener('change', function () { setBackground(bgColor.value); });
+  bgReset.addEventListener('click', function () { setBackground('#ffffff'); });
 
   toolSel.addEventListener('change', onToolChange);
   sizeInput.addEventListener('input', function () {
