@@ -3,86 +3,218 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Drawing Surface</title>
+<title>AI Drawing Partner</title>
 <style>
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; background: #f0f0f0; }
-  #toolbar {
-    height: 48px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 12px;
-    background: #fff;
-    border-bottom: 1px solid #ccc;
+  :root {
+    --grad: linear-gradient(to top right, #c8633b 0%, #9a6a7e 50%, #5a80d4 100%);
+    --grad-btn: linear-gradient(90deg, #b5552f 0%, #86607c 50%, #4a6cc4 100%);
+    --ink: #1f2330;
+    --muted: #5b6273;
+    --line: rgba(31, 35, 48, 0.12);
+    --glass: rgba(255, 255, 255, 0.88);
+    --accent: #4a6cc4;
+    --danger: #b00020;
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(30, 20, 50, 0.22);
   }
-  button {
-    padding: 6px 14px;
-    font-size: 14px;
-    border: 1px solid #888;
-    border-radius: 4px;
-    background: #fafafa;
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--grad);
+  }
+  body.resizing { cursor: col-resize; user-select: none; }
+  svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---- Top bar ---- */
+  #toolbar {
+    margin: 12px 12px 10px;
+    padding: 8px 14px 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px 14px;
+    background: var(--glass);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+  .brand { align-self: center; display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; white-space: nowrap; }
+  .brand-mark { width: 22px; height: 22px; border-radius: 7px; background: var(--grad); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35); }
+  .group { display: flex; flex-direction: column; gap: 4px; }
+  .group-label { font-size: 10.5px; font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); padding-left: 2px; }
+  .group-body { display: flex; align-items: center; gap: 6px; min-height: 34px; }
+  .vsep { width: 1px; align-self: stretch; background: var(--line); }
+  .spacer { flex: 1; }
+  /* Narrower windows: drop the app name before the tools start wrapping. */
+  @media (max-width: 1520px) { .brand-name, .brand + .vsep { display: none; } }
+  @media (max-width: 1760px) {
+    #undo .btn-text, #clear .btn-text, #download .btn-text { display: none; }
+    #undo, #clear, #download { width: 34px; padding: 0; justify-content: center; }
+  }
+  @media (max-width: 1440px) { #size { width: 70px; } }
+
+  .btn {
+    height: 34px;
+    padding: 0 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: #fff;
+    color: var(--ink);
+    font: 500 13.5px system-ui, -apple-system, "Segoe UI", sans-serif;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.12s, box-shadow 0.12s, filter 0.12s;
+  }
+  .btn:hover:not(:disabled) { background: #f2f3f8; }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn.small { height: 28px; padding: 0 9px; font-size: 12.5px; }
+  .btn.icon-only { width: 30px; height: 30px; padding: 0; justify-content: center; border-color: transparent; background: transparent; }
+  .btn.icon-only:hover:not(:disabled) { background: rgba(31, 35, 48, 0.07); }
+  .btn.primary { background: var(--grad-btn); color: #fff; border-color: transparent; font-weight: 600; box-shadow: 0 2px 8px rgba(74, 60, 120, 0.25); }
+  .btn.primary:hover:not(:disabled) { background: var(--grad-btn); filter: brightness(1.08); }
+  .btn.primary:disabled { opacity: 0.5; box-shadow: none; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible, .resizer:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Numbered steps of the AI flow: 1 Ask AI → 2 Get reference image → 3 AI draw */
+  .step { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 700; background: rgba(255, 255, 255, 0.28); color: #fff; }
+  h3 .step { background: var(--grad-btn); }
+
+  .seg { display: inline-flex; gap: 2px; padding: 3px; background: rgba(31, 35, 48, 0.07); border-radius: 10px; }
+  .seg button {
+    height: 28px;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted);
+    font: 500 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+    white-space: nowrap;
     cursor: pointer;
   }
-  button:hover:not(:disabled) { background: #e8e8e8; }
-  button:disabled { opacity: 0.4; cursor: default; }
-  #main { position: absolute; top: 48px; left: 0; right: 0; bottom: 0; display: flex; }
-  #canvas-wrap { flex: 1; min-width: 0; position: relative; }
+  .seg button:hover { color: var(--ink); }
+  .seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16); }
+  .seg button[aria-pressed="true"] svg { color: var(--accent); }
+  .seg svg.i { width: 16px; height: 16px; }
+
+  #size { width: 84px; accent-color: var(--accent); }
+  #size:disabled { opacity: 0.4; }
+  #size-val { min-width: 22px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  input.swatch {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: none;
+    box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+  }
+  input.swatch::-webkit-color-swatch-wrapper { padding: 0; }
+  input.swatch::-webkit-color-swatch { border: none; border-radius: 50%; }
+  input.swatch::-moz-color-swatch { border: none; border-radius: 50%; }
+  .swatch-field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
+
+  /* ---- Main area: canvas card + side panels ---- */
+  #main { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 0 12px 12px; }
+  /* The canvas card stays plain white: the gradient only frames it. */
+  #canvas-wrap {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    background: #fff;
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow), 0 0 0 1px rgba(255, 255, 255, 0.5);
+  }
   canvas { display: block; width: 100%; height: 100%; background: #fff; cursor: crosshair; }
-  #panel {
-    width: 320px;
-    flex-shrink: 0;
+
+  .panel {
+    position: relative;
+    flex: none;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    background: #fff;
-    border-left: 1px solid #ccc;
+    background: var(--glass);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
   }
-  #panel h2 { margin: 0; padding: 12px; font-size: 15px; border-bottom: 1px solid #eee; }
-  #reasoning { flex: 1; overflow-y: auto; padding: 12px; font-size: 14px; line-height: 1.45; }
-  #reasoning .entry { margin: 0 0 12px; padding-bottom: 12px; border-bottom: 1px solid #eee; white-space: pre-wrap; }
-  #reasoning .placeholder { color: #888; }
-  #reasoning .error { color: #b00020; }
-  #reasoning .loading { color: #555; display: flex; align-items: center; gap: 8px; }
-  #reference {
-    flex-shrink: 0;
-    max-height: 55%;
-    overflow-y: auto;
-    padding: 12px;
-    border-top: 2px solid #ccc;
-    background: #fafafa;
+  .panel-head { display: flex; align-items: center; gap: 8px; padding: 10px 8px 10px 16px; border-bottom: 1px solid var(--line); }
+  .panel-head h2 { flex: 1; margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 650; }
+  .panel-head h2 svg { color: var(--accent); }
+  .badge { min-width: 20px; height: 20px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; }
+  .badge[hidden] { display: none; }
+
+  /* Collapsed panels shrink to a slim rail; click it to reopen. */
+  .rail { display: none; }
+  .panel.collapsed { width: 48px !important; }
+  .panel.collapsed > :not(.rail) { display: none; }
+  .panel.collapsed > .rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    height: 100%;
+    padding: 12px 0;
+    border: none;
+    background: transparent;
+    color: var(--ink);
+    font: 600 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+    cursor: pointer;
   }
-  #reference h3 { margin: 0 0 8px; font-size: 14px; }
-  #ref-row { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-  #ref-input { width: 100%; padding: 6px 8px; font: 13px/1.4 system-ui, sans-serif; border: 1px solid #888; border-radius: 4px; resize: vertical; }
-  #ref-hint { margin: 6px 0 0; font-size: 12px; color: #666; }
-  #ref-actions { display: flex; align-items: center; gap: 10px; font-size: 13px; }
-  #pen-color, #bg-color { width: 32px; height: 28px; padding: 0 2px; border: 1px solid #888; border-radius: 4px; background: #fafafa; }
+  .panel.collapsed > .rail:hover { background: rgba(255, 255, 255, 0.6); }
+  .rail svg.i:not(:first-child) { color: var(--accent); }
+  .rail-label { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; }
+
+  /* Drag the left edge of a panel to resize it (double-click resets). */
+  .resizer { position: absolute; left: 0; top: 0; bottom: 0; width: 8px; z-index: 2; cursor: col-resize; touch-action: none; }
+  .resizer::after { content: ""; position: absolute; left: 2px; top: 50%; width: 4px; height: 44px; margin-top: -22px; border-radius: 2px; background: rgba(31, 35, 48, 0.25); opacity: 0; transition: opacity 0.15s; }
+  .panel:hover .resizer::after, .resizer.dragging::after, .resizer:focus-visible::after { opacity: 1; }
+
+  #reasoning { flex: 1; min-height: 80px; overflow-y: auto; padding: 14px; font-size: 14px; line-height: 1.5; }
+  #reasoning .entry { margin: 0 0 10px; padding: 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px; white-space: pre-wrap; }
+  #reasoning .placeholder { color: var(--muted); }
+  #reasoning .error { color: var(--danger); }
+  #reasoning .loading { color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  #reference { flex-shrink: 0; max-height: 62%; overflow-y: auto; padding: 14px; border-top: 1px solid var(--line); background: rgba(255, 255, 255, 0.55); }
+  #reference h3 { margin: 0 0 10px; display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 650; }
+  #ref-row { display: flex; flex-direction: column; gap: 8px; }
+  #ref-input { width: 100%; padding: 8px 10px; font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 9px; resize: vertical; }
+  #ref-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 13px; }
+  #ref-actions label { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); cursor: pointer; }
+  #ref-color { accent-color: var(--accent); }
+  #ref-hint { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
   #ref-result { margin-top: 10px; font-size: 14px; }
-  #ref-result img { display: block; max-width: 100%; height: auto; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
-  #ref-result .error { color: #b00020; }
-  #ref-result .loading { color: #555; display: flex; align-items: center; gap: 8px; }
-  #log {
-    width: 260px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    background: #fff;
-    border-left: 1px solid #ccc;
-  }
-  #log h2 { margin: 0; padding: 12px; font-size: 15px; border-bottom: 1px solid #eee; }
-  #log-list { flex: 1; overflow-y: auto; padding: 8px; margin: 0; list-style: none; font-size: 13px; line-height: 1.4; }
-  #log-list .placeholder { color: #888; padding: 4px; }
-  .turn { padding: 8px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa; }
-  .turn-head { font-weight: 600; margin-bottom: 4px; }
-  .turn-head .who { font-weight: 400; color: #555; }
-  .turn img { display: block; max-width: 100%; height: auto; border: 1px solid #ccc; background: #fff; margin-bottom: 4px; }
+  #ref-result img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  #ref-result .error { color: var(--danger); }
+  #ref-result .loading { color: var(--muted); display: flex; align-items: center; gap: 8px; }
+
+  #log-list { flex: 1; overflow-y: auto; padding: 10px; margin: 0; list-style: none; font-size: 13px; line-height: 1.4; }
+  #log-list .placeholder { color: var(--muted); padding: 4px; }
+  .turn { padding: 10px; margin-bottom: 8px; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+  .turn-head { font-weight: 650; margin-bottom: 6px; }
+  .turn-head .who { font-weight: 400; color: var(--muted); }
+  .turn img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; background: #fff; margin-bottom: 6px; }
   .turn img.ref { max-width: 96px; }
   .turn-text { white-space: pre-wrap; word-break: break-word; }
-  #toolbar select { padding: 5px 6px; font-size: 14px; border: 1px solid #888; border-radius: 4px; background: #fafafa; }
-  #toolbar label { font-size: 13px; color: #444; }
-  .tb-sep { width: 1px; height: 24px; background: #ddd; margin: 0 4px; }
-  #size { width: 90px; }
-  #size-val { font-size: 13px; color: #444; min-width: 22px; }
+
   /* Overlays live in the DOM above the canvas, so they are never part of exports. */
   #sel-box, #marquee, #brush-cursor { position: absolute; display: none; pointer-events: none; }
   #sel-box { border: 1px dashed #1a73e8; box-shadow: 0 0 0 1px rgba(255,255,255,0.8); }
@@ -105,55 +237,134 @@
 </style>
 </head>
 <body>
-<div id="toolbar">
-  <button id="undo" disabled>Undo</button>
-  <button id="clear" disabled>Clear</button>
-  <button id="ask" disabled>Ask AI</button>
-  <span class="tb-sep"></span>
-  <label for="tool">Tool</label>
-  <select id="tool">
-    <option value="pen">Pen</option>
-    <option value="eraser">Eraser</option>
-    <option value="select">Select / move</option>
-    <option value="region">Mark region</option>
-  </select>
-  <label for="size">Size</label>
-  <input id="size" type="range" min="1" max="60" value="4">
-  <span id="size-val">4</span>
-  <input id="pen-color" type="color" value="#000000" title="Pen colour">
-  <span class="tb-sep"></span>
-  <label for="bg-color">Background</label>
-  <input id="bg-color" type="color" value="#ffffff" title="Fill the whole canvas background">
-  <button id="bg-reset" title="Reset the background to white">White</button>
-  <span class="tb-sep"></span>
-  <label for="mode">AI draw mode</label>
-  <select id="mode">
-    <option value="overwrite">Overwrite</option>
-    <option value="incremental">Incremental</option>
-  </select>
-  <button id="draw" disabled>AI draw</button>
-</div>
+<header id="toolbar">
+  <div class="brand" title="AI Drawing Partner"><span class="brand-mark"></span><span class="brand-name">AI Drawing Partner</span></div>
+  <div class="vsep"></div>
+
+  <div class="group">
+    <span class="group-label">Actions</span>
+    <div class="group-body">
+      <button id="undo" class="btn" disabled aria-label="Undo" title="Undo the last action (⌘Z / Ctrl+Z)">
+        <svg class="i" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><span class="btn-text">Undo</span></button>
+      <button id="clear" class="btn" disabled aria-label="Clear" title="Remove every stroke (can be undone)">
+        <svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg><span class="btn-text">Clear</span></button>
+      <button id="download" class="btn" disabled aria-label="Download" title="Download the drawing as a PNG (⌘S / Ctrl+S)">
+        <svg class="i" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span class="btn-text">Download</span></button>
+    </div>
+  </div>
+
+  <div class="group">
+    <span class="group-label">Tool</span>
+    <div class="group-body">
+      <!-- The hidden select holds the tool state the drawing code reads; the buttons drive it. -->
+      <select id="tool" hidden>
+        <option value="pen">Pen</option>
+        <option value="eraser">Eraser</option>
+        <option value="select">Select / move</option>
+        <option value="region">Mark region</option>
+      </select>
+      <div class="seg" role="group" aria-label="Tool">
+        <button type="button" data-tool="pen" title="Pen: draw freehand (P)">
+          <svg class="i" viewBox="0 0 24 24"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>Pen</button>
+        <button type="button" data-tool="eraser" title="Eraser: rub out parts of the drawing (E)">
+          <svg class="i" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L11 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>Eraser</button>
+        <button type="button" data-tool="select" title="Select / move: click or drag a box, then drag to move; Delete removes (V)">
+          <svg class="i" viewBox="0 0 24 24"><path d="M4 4l7 17 2.5-7.5L21 11Z"/></svg>Select</button>
+        <button type="button" data-tool="region" title="Mark region: drag a box where the AI should draw (R)">
+          <svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="4 3"/></svg>Mark region</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <span class="group-label">Brush</span>
+    <div class="group-body">
+      <input id="size" type="range" min="1" max="60" value="4" aria-label="Brush size" title="Brush size">
+      <span id="size-val">4</span>
+      <input id="pen-color" class="swatch" type="color" value="#000000" title="Pen colour" aria-label="Pen colour">
+    </div>
+  </div>
+
+  <div class="group">
+    <span class="group-label">Background</span>
+    <div class="group-body">
+      <label class="swatch-field" title="Fill the whole canvas with a colour">
+        <svg class="i" viewBox="0 0 24 24"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2a2 2 0 0 0 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"/></svg>
+        <input id="bg-color" class="swatch" type="color" value="#ffffff" aria-label="Background colour">
+      </label>
+      <button id="bg-reset" class="btn small" title="Reset the background to white">White</button>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <div class="group">
+    <span class="group-label">AI turn</span>
+    <div class="group-body">
+      <button id="ask" class="btn primary" disabled title="Step 1: Claude looks at the canvas and suggests what to draw next">
+        <span class="step">1</span>
+        <svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.1 14c.2-1 .7-1.7 1.5-2.5A6 6 0 1 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/></svg>Ask AI</button>
+      <!-- Hidden select holds the AI draw mode; the buttons drive it. -->
+      <select id="mode" hidden>
+        <option value="overwrite">Overwrite</option>
+        <option value="incremental">Incremental</option>
+      </select>
+      <div class="seg" role="group" aria-label="Where AI draw puts its drawing" title="Where AI draw puts its drawing">
+        <button type="button" data-mode="overwrite" title="AI draw replaces the whole canvas">Whole canvas</button>
+        <button type="button" data-mode="incremental" title="AI draw replaces only a region you mark on the canvas">Marked region</button>
+      </div>
+      <button id="draw" class="btn primary" disabled>
+        <span class="step">3</span>
+        <svg class="i" viewBox="0 0 24 24"><path d="m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z"/></svg>AI draw</button>
+    </div>
+  </div>
+</header>
+
 <div id="main">
   <div id="canvas-wrap"><canvas id="canvas"></canvas><div id="region-box"></div><div id="sel-box"></div><div id="marquee"></div><div id="brush-cursor"></div></div>
-  <aside id="panel">
-    <h2>AI reasoning</h2>
+
+  <aside id="ai-panel" class="panel" data-default-width="360" style="width: 360px">
+    <div class="resizer" role="separator" aria-orientation="vertical" aria-label="Resize the AI reasoning panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
+    <div class="panel-head">
+      <h2><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.1 14c.2-1 .7-1.7 1.5-2.5A6 6 0 1 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/></svg>AI reasoning</h2>
+      <button class="btn icon-only collapse-btn" aria-label="Collapse the AI reasoning panel" title="Collapse">
+        <svg class="i" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+    </div>
     <div id="reasoning"><p class="placeholder">Draw something, then click “Ask AI”.</p></div>
     <section id="reference">
-      <h3>Reference image</h3>
+      <h3><span class="step">2</span>Reference image</h3>
       <div id="ref-row">
         <textarea id="ref-input" rows="3" maxlength="600" placeholder="Describe what to draw, or edit the AI's suggestion, e.g. “add a bright day with a smiling sun”"></textarea>
         <div id="ref-actions">
-          <button id="ref-btn" disabled>Get reference image</button>
+          <button id="ref-btn" class="btn primary" disabled>
+            <svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>Get reference image</button>
           <label><input id="ref-color" type="checkbox" checked> Colour</label>
         </div>
       </div>
       <p id="ref-hint"></p>
       <div id="ref-result"></div>
     </section>
+    <button class="rail" aria-label="Expand the AI reasoning panel" title="Expand AI reasoning">
+      <svg class="i" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+      <svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.1 14c.2-1 .7-1.7 1.5-2.5A6 6 0 1 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/></svg>
+      <span class="rail-label">AI reasoning</span>
+    </button>
   </aside>
-  <aside id="log">
-    <h2>Turn log</h2>
+
+  <aside id="log-panel" class="panel collapsed" data-default-width="300" style="width: 300px">
+    <div class="resizer" role="separator" aria-orientation="vertical" aria-label="Resize the turn log panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
+    <div class="panel-head">
+      <h2><svg class="i" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Turn log</h2>
+      <button class="btn icon-only collapse-btn" aria-label="Collapse the turn log panel" title="Collapse">
+        <svg class="i" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+    </div>
     <ol id="log-list"><li class="placeholder">No turns yet.</li></ol>
+    <button class="rail" aria-label="Expand the turn log panel" title="Expand turn log">
+      <svg class="i" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+      <svg class="i" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+      <span class="rail-label">Turn log</span>
+      <span class="badge" id="log-count" hidden></span>
+    </button>
   </aside>
 </div>
 
@@ -177,6 +388,7 @@
   const ctx = canvas.getContext('2d');
   const undoBtn = document.getElementById('undo');
   const clearBtn = document.getElementById('clear');
+  const downloadBtn = document.getElementById('download');
   const askBtn = document.getElementById('ask');
   const panel = document.getElementById('reasoning');
 
@@ -326,7 +538,12 @@
     canvas.width = Math.round(rect.width * dpr);
     canvas.height = Math.round(rect.height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (region) setRegion(null);   // region is in css px of the old canvas size
+    // Drawing and region are in css px from the top-left, so they survive a resize;
+    // only clip the region to the new bounds (panel drags and collapses resize often).
+    if (region) {
+      const r = rectFrom({ x: region.x, y: region.y }, { x: region.x + region.w, y: region.y + region.h });
+      setRegion(r.w >= MIN_REGION && r.h >= MIN_REGION ? r : null);
+    }
     redraw();
   }
 
@@ -763,6 +980,7 @@
   function updateButtons() {
     undoBtn.disabled = undoStack.length === 0;
     clearBtn.disabled = items.length === 0;
+    downloadBtn.disabled = items.length === 0 && background === '#ffffff';
     askBtn.disabled = items.length === 0 || asking;
     updateRefControls();
   }
@@ -948,7 +1166,7 @@
         ? 'Using the AI suggestion. Edit or add to it with your own ideas.'
         : p.edited ? 'Using the AI suggestion with your additions.' : 'Using your instruction.';
     let drawBlock = '';
-    if (needsRegion) drawBlock = 'Incremental mode: mark a region on the canvas first.';
+    if (needsRegion) drawBlock = 'AI draws on a marked region: use Mark region to drag a box on the canvas first.';
     else if (!currentRef) drawBlock = 'Generate a reference image before using AI draw.';
     else if (aiDrawSpent) drawBlock = 'AI draw used. Click Ask AI or Get reference image to enable it again.';
     if (drawBlock) hint += ' ' + drawBlock;
@@ -1147,7 +1365,8 @@
   }
 
   // Export on the background colour so transparent pixels don't read as black.
-  function canvasToBase64() {
+  // Full-resolution copy of the drawing on its background colour (overlays excluded).
+  function compositeCanvas() {
     const off = document.createElement('canvas');
     off.width = canvas.width;
     off.height = canvas.height;
@@ -1155,7 +1374,31 @@
     octx.fillStyle = background;
     octx.fillRect(0, 0, off.width, off.height);
     octx.drawImage(canvas, 0, 0);
-    return off.toDataURL('image/png');
+    return off;
+  }
+
+  function canvasToBase64() {
+    return compositeCanvas().toDataURL('image/png');
+  }
+
+  // Saves the drawing as drawing-YYYY-MM-DD-HHMM.png.
+  function downloadDrawing() {
+    if (downloadBtn.disabled) return;
+    const d = new Date();
+    const pad = function (n) { return String(n).padStart(2, '0'); };
+    const name = 'drawing-' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+      '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.png';
+    compositeCanvas().toBlob(function (blob) {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }, 'image/png');
   }
 
   function setPanel(className, text) {
@@ -1329,6 +1572,8 @@
 
   undoBtn.addEventListener('click', undo);
 
+  downloadBtn.addEventListener('click', downloadDrawing);
+
   clearBtn.addEventListener('click', function () {
     if (!items.length) return;
     current = null;
@@ -1350,7 +1595,10 @@
   window.addEventListener('keydown', function (e) {
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
-    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      downloadDrawing();
+    } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
       e.preventDefault();
       undo();
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && selection.size) {
@@ -1381,8 +1629,110 @@
   });
   updateRefControls();
 
-  window.addEventListener('resize', resize);
-  resize();
+  // ---- App shell: segmented buttons, tool shortcuts, collapsible + resizable panels ----
+
+  // The tool and mode <select>s stay the source of truth; the buttons drive them and mirror them.
+  const toolButtons = document.querySelectorAll('[data-tool]');
+  const modeButtons = document.querySelectorAll('[data-mode]');
+
+  function syncSegments() {
+    toolButtons.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.tool === toolSel.value)); });
+    modeButtons.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.mode === modeSel.value)); });
+  }
+
+  function choose(select, value) {
+    if (select.value === value) return;
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+  }
+
+  toolButtons.forEach(function (b) { b.addEventListener('click', function () { choose(toolSel, b.dataset.tool); }); });
+  modeButtons.forEach(function (b) { b.addEventListener('click', function () { choose(modeSel, b.dataset.mode); }); });
+  toolSel.addEventListener('change', syncSegments);
+  modeSel.addEventListener('change', syncSegments);   // runs after the mode handler switches the tool
+  syncSegments();
+
+  const TOOL_KEYS = { p: 'pen', e: 'eraser', v: 'select', r: 'region' };
+  window.addEventListener('keydown', function (e) {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tool = TOOL_KEYS[e.key.toLowerCase()];
+    if (tool) choose(toolSel, tool);
+  });
+
+  const PANEL_MIN = 260, PANEL_MAX = 640;
+
+  function clampPanel(w) {
+    return Math.round(Math.max(PANEL_MIN, Math.min(PANEL_MAX, window.innerWidth * 0.45, w)));
+  }
+
+  // Widths persist per viewer (best effort); collapsed state always starts from the
+  // markup defaults: AI reasoning open, turn log collapsed.
+  document.querySelectorAll('.panel').forEach(function (p) {
+    const key = 'panelWidth:' + p.id;
+    const setWidth = function (w, save) {
+      p.style.width = clampPanel(w) + 'px';
+      if (save) try { localStorage.setItem(key, String(clampPanel(w))); } catch (_) {}
+    };
+    try {
+      const saved = Number(localStorage.getItem(key));
+      if (saved) setWidth(saved);
+    } catch (_) {}
+
+    p.querySelector('.collapse-btn').addEventListener('click', function () { p.classList.add('collapsed'); });
+    p.querySelector('.rail').addEventListener('click', function () { p.classList.remove('collapsed'); });
+
+    const handle = p.querySelector('.resizer');
+    handle.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      const startX = e.clientX, startW = p.getBoundingClientRect().width;
+      handle.classList.add('dragging');
+      document.body.classList.add('resizing');
+      const move = function (ev) { setWidth(startW - (ev.clientX - startX)); };   // panels sit on the right
+      const up = function () {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+        handle.removeEventListener('pointercancel', up);
+        handle.classList.remove('dragging');
+        document.body.classList.remove('resizing');
+        setWidth(p.getBoundingClientRect().width, true);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+    });
+    handle.addEventListener('dblclick', function () { setWidth(Number(p.dataset.defaultWidth), true); });
+    handle.addEventListener('keydown', function (e) {
+      const step = e.key === 'ArrowLeft' ? 20 : e.key === 'ArrowRight' ? -20 : 0;
+      if (!step) return;
+      e.preventDefault();
+      setWidth(p.getBoundingClientRect().width + step, true);
+    });
+  });
+
+  // Turn count on the collapsed turn log's rail.
+  const logCount = document.getElementById('log-count');
+  new MutationObserver(function () {
+    const n = logList.querySelectorAll('.turn').length;
+    logCount.textContent = n;
+    logCount.hidden = !n;
+  }).observe(logList, { childList: true });
+
+  // The canvas follows its card's size: window resizes, panel drags and collapses.
+  const canvasWrap = document.getElementById('canvas-wrap');
+  let fittedSize = '';
+  function fitCanvas() {
+    const r = canvasWrap.getBoundingClientRect();
+    const size = Math.round(r.width) + 'x' + Math.round(r.height) + '@' + (window.devicePixelRatio || 1);
+    if (size === fittedSize) return;
+    fittedSize = size;
+    resize();
+  }
+  new ResizeObserver(fitCanvas).observe(canvasWrap);
+  window.addEventListener('resize', fitCanvas);
+  fitCanvas();
 })();
 </script>
 </body>

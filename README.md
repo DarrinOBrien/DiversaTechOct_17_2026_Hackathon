@@ -49,11 +49,14 @@ Every action is recorded in the **turn log** (proposer, executor, text, canvas t
   - Mark region, which sets the target area for incremental AI drawing.
   - Background fill colour for the whole canvas (the eraser reveals it; White resets it). It is included in everything sent to Claude.
   - Undo for every action (Cmd/Ctrl+Z), and Clear (which can also be undone).
-- **AI draw modes:** *Incremental* replaces only the marked region. *Overwrite* replaces the whole canvas.
+- **Where AI draws** (toolbar, *AI turn*): *Marked region* (incremental) replaces only the region you mark. *Whole canvas* (overwrite) replaces everything.
+- **Layout:** the AI reasoning and turn log panels can each be collapsed to a slim rail and resized by dragging their left edge (double-click the edge to reset; widths are remembered). On load, AI reasoning is open and the turn log is collapsed, showing a turn count.
+- **Download:** the Download button (or ⌘S / Ctrl+S) saves the drawing as a PNG named `drawing-YYYY-MM-DD-HHMM.png`, at full screen resolution and including the background colour. Selection boxes and the marked region are not included.
+- **Keyboard:** P pen, E eraser, V select, R mark region; ⌘S / Ctrl+S download; ⌘Z / Ctrl+Z undo; Delete removes a selection; Escape deselects; Enter in the instruction box gets a reference image.
 - **Colour or black-and-white** references (Colour checkbox).
 - **Style tiers** by turn count: rough sketch for turns 0–5, line drawing for 6–15, detailed illustration from 16 on.
 - **Guard rails:**
-  - In Incremental mode, Get reference image needs a marked region.
+  - When AI draws on a marked region, Get reference image needs a marked region.
   - AI draw needs a reference image.
   - AI draw is single-use until you Ask AI again or get a new reference.
 
@@ -137,7 +140,7 @@ This is an earlier SDXL inpainting endpoint, kept for reference. Its safety chec
 
 ## Known limitations
 
-- **Region scope:** in Incremental mode, anything you ask for that falls outside the marked region is dropped by design. Use Overwrite for whole-scene changes.
+- **Region scope:** when AI draws on a marked region, anything you ask for that falls outside it is dropped by design. Use Whole canvas for whole-scene changes.
 - **Gradients:** gradients and heavy shading trace as bands of flat colour. The prompt asks FLUX for flat fills to avoid this.
 - **Busy images:** busy references (nets, foliage) can produce over a thousand strokes. If tracing or dragging feels slow, lower `TRACE_MAX_SIDE`.
 - **Eraser and moves:** eraser marks are fixed in place, so moving a stroke you partly erased brings the erased part back at its new position.
