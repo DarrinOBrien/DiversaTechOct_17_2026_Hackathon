@@ -435,6 +435,113 @@ def draw():
     })
 
 
+# Tutorial mode ("Teach me"): the browser splits the traced reference into ordered
+# steps; Claude only writes one beginner-friendly instruction per step.
+TUTORIAL_EFFORT = os.environ.get("TUTORIAL_EFFORT", "low")
+MAX_TUTORIAL_STEPS = 6
+
+TUTORIAL_SYSTEM = """\
+You are a patient drawing teacher in a collaborative drawing app. The human draws everything themselves by tracing a light blue guide that appears on their canvas one step at a time.
+
+You receive the current canvas (the target area is outlined in red when only part of the canvas is changing), the reference image the guide was traced from, the human's goal, and a preview of each step: earlier steps in grey, the strokes for that step in black.
+
+Write one instruction per step, in the same order, for a beginner:
+- Exactly one plain-language sentence (never two), at most 25 words, saying what to draw and where (for example "Draw a tall oval for the trunk, slightly left of center").
+- Each step is one part of the drawing, in drawing order: "first" is the biggest part, "part" is the next part (usually one that joins what is already drawn), "details" collects the small finishing touches, "fill" is colouring in. Name the part (for example "the trunk") and say where it sits relative to parts already drawn.
+- Describe only what is new in that step's black strokes, using simple shapes, positions and sizes. Name colours only for colour or fill steps.
+- Use encouraging, concrete words; no jargon, no art-school terms.
+- The title is 2 to 4 words naming the step (for example "Trunk outline").
+Return exactly as many steps as you were given."""
+
+TUTORIAL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "steps": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "instruction": {"type": "string"},
+                },
+                "required": ["title", "instruction"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["steps"],
+    "additionalProperties": False,
+}
+
+
+@app.post("/api/tutorial")
+def tutorial():
+    data = request.get_json(silent=True) or {}
+    steps = data.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return jsonify({"error": "steps is required"}), 400
+    steps = [s for s in steps if isinstance(s, dict)][:MAX_TUTORIAL_STEPS]
+    if not steps:
+        return jsonify({"error": "steps is required"}), 400
+
+    instruction = data.get("instruction") if isinstance(data.get("instruction"), str) else ""
+    content = []
+    for label, field in (("Current canvas:", "canvas_image_base64"), ("Reference image the guide was traced from:", "reference_image_base64")):
+        if isinstance(data.get(field), str) and data[field]:
+            content.append({"type": "text", "text": label})
+            content.append(image_block(data[field]))
+    for n, step in enumerate(steps, 1):
+        content.append({"type": "text", "text": (
+            f"Step {n} of {len(steps)} ({step.get('kind') or 'strokes'}, "
+            f"{step.get('stroke_count') or 'some'} strokes). Preview:"
+        )})
+        if isinstance(step.get("preview_base64"), str) and step["preview_base64"]:
+            content.append(image_block(step["preview_base64"]))
+    area_note = (
+        "only the red-outlined area of the canvas" if data.get("mode") == "incremental" else "the whole canvas"
+    )
+    content.append({"type": "text", "text": (
+        f"Goal: {instruction[:600] or 'draw the reference image'}\n"
+        f"The guide covers {area_note}. Write {len(steps)} steps."
+    )})
+
+    try:
+        response = client.beta.messages.create(
+            model=MODEL,
+            max_tokens=4000,
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            output_config={
+                "effort": TUTORIAL_EFFORT,
+                "format": {"type": "json_schema", "schema": TUTORIAL_SCHEMA},
+            },
+            system=TUTORIAL_SYSTEM,
+            messages=[{"role": "user", "content": content}],
+        )
+    except anthropic.APIStatusError as e:
+        return jsonify({"error": f"Anthropic API error: {e.message}"}), 502
+    except anthropic.APIConnectionError:
+        return jsonify({"error": "Could not reach the Anthropic API"}), 502
+
+    if response.stop_reason in ("refusal", "max_tokens"):
+        return jsonify({"error": f"Tutorial text stopped early: {response.stop_reason}"}), 502
+    try:
+        text = next(b.text for b in response.content if b.type == "text")
+        written = json.loads(text)["steps"]
+    except (StopIteration, ValueError, KeyError, TypeError):
+        return jsonify({"error": "Unexpected response from the model"}), 502
+
+    # Exactly one entry per step sent: pad with generic text, drop extras.
+    out = []
+    for n in range(len(steps)):
+        w = written[n] if n < len(written) and isinstance(written[n], dict) else {}
+        out.append({
+            "title": str(w.get("title") or f"Step {n + 1} of {len(steps)}").strip()[:60],
+            "instruction": str(w.get("instruction") or "Trace the blue guide lines.").strip()[:300],
+        })
+    app.logger.info("tutorial\n  goal=%r\n  steps=%r", instruction, out)
+    return jsonify({"steps": out})
+
 if __name__ == "__main__":
     # Not 5000: macOS AirPlay Receiver occupies it.
     app.run(host="127.0.0.1", port=5001, debug=True)

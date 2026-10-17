@@ -52,7 +52,9 @@
   .vsep { width: 1px; align-self: stretch; background: var(--line); }
   .spacer { flex: 1; }
   /* Narrower windows: drop the app name before the tools start wrapping. */
-  @media (max-width: 1520px) { .brand-name, .brand + .vsep { display: none; } }
+  @media (max-width: 1700px) { .brand-name, .brand + .vsep { display: none; } }
+  /* Tool buttons go icon-only; their tooltips name the tool and its shortcut key. */
+  @media (max-width: 1520px) { .tool-text { display: none; } .seg button[data-tool] { padding: 0 9px; } }
   @media (max-width: 1760px) {
     #undo .btn-text, #clear .btn-text, #download .btn-text { display: none; }
     #undo, #clear, #download { width: 34px; padding: 0; justify-content: center; }
@@ -215,6 +217,48 @@
   .turn img.ref { max-width: 96px; }
   .turn-text { white-space: pre-wrap; word-break: break-word; }
 
+  /* Tutorial guide: its own canvas layer above the drawing. It is never drawn into
+     #canvas, so it never reaches exports, Claude, thumbnails or undo history. */
+  #guide { position: absolute; left: 0; top: 0; background: transparent; pointer-events: none; opacity: 0.6; }
+  .tutorial-card {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    z-index: 3;
+    width: min(440px, calc(100% - 24px));
+    padding: 12px 14px;
+    background: var(--glass);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-radius: 12px;
+    box-shadow: var(--shadow), 0 0 0 1px var(--line);
+    font-size: 13.5px;
+    cursor: default;
+  }
+  .tutorial-card[hidden] { display: none; }
+  .tut-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .tut-step { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #2f6fe4; white-space: nowrap; }
+  .tut-title { font-weight: 650; }
+  #tut-text { margin: 0 0 6px; line-height: 1.45; }
+  .tut-note { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+  .tut-note:empty { display: none; }
+  .tut-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .tut-controls label { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+  #tut-opacity { width: 70px; accent-color: #2f6fe4; }
+  #tut-show { accent-color: #2f6fe4; }
+  .tut-controls .tut-exit { margin-left: auto; }
+
+  /* "How to use" panel */
+  #help-body { flex: 1; overflow-y: auto; padding: 14px 16px 16px; font-size: 13px; line-height: 1.5; }
+  #help-body h3 { margin: 16px 0 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  #help-body h3:first-child { margin-top: 0; }
+  #help-body p { margin: 0 0 8px; }
+  #help-body ol, #help-body ul { margin: 0 0 8px; padding-left: 20px; }
+  #help-body li { margin-bottom: 6px; }
+  #help-body li::marker { color: var(--accent); font-weight: 700; }
+  #help-body b { font-weight: 650; }
+  kbd { display: inline-block; min-width: 18px; padding: 0 5px; font: 600 11px/18px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; color: var(--ink); background: #fff; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; }
+
   /* Overlays live in the DOM above the canvas, so they are never part of exports. */
   #sel-box, #marquee, #brush-cursor { position: absolute; display: none; pointer-events: none; }
   #sel-box { border: 1px dashed #1a73e8; box-shadow: 0 0 0 1px rgba(255,255,255,0.8); }
@@ -264,14 +308,14 @@
         <option value="region">Mark region</option>
       </select>
       <div class="seg" role="group" aria-label="Tool">
-        <button type="button" data-tool="pen" title="Pen: draw freehand (P)">
-          <svg class="i" viewBox="0 0 24 24"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>Pen</button>
-        <button type="button" data-tool="eraser" title="Eraser: rub out parts of the drawing (E)">
-          <svg class="i" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L11 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>Eraser</button>
-        <button type="button" data-tool="select" title="Select / move: click or drag a box, then drag to move; Delete removes (V)">
-          <svg class="i" viewBox="0 0 24 24"><path d="M4 4l7 17 2.5-7.5L21 11Z"/></svg>Select</button>
-        <button type="button" data-tool="region" title="Mark region: drag a box where the AI should draw (R)">
-          <svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="4 3"/></svg>Mark region</button>
+        <button type="button" data-tool="pen" aria-label="Pen" title="Pen: draw freehand (P)">
+          <svg class="i" viewBox="0 0 24 24"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg><span class="tool-text">Pen</span></button>
+        <button type="button" data-tool="eraser" aria-label="Eraser" title="Eraser: rub out parts of the drawing (E)">
+          <svg class="i" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L11 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg><span class="tool-text">Eraser</span></button>
+        <button type="button" data-tool="select" aria-label="Select" title="Select / move: click or drag a box, then drag to move; Delete removes (V)">
+          <svg class="i" viewBox="0 0 24 24"><path d="M4 4l7 17 2.5-7.5L21 11Z"/></svg><span class="tool-text">Select</span></button>
+        <button type="button" data-tool="region" aria-label="Mark region" title="Mark region: drag a box where the AI should draw (R)">
+          <svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="4 3"/></svg><span class="tool-text">Mark region</span></button>
       </div>
     </div>
   </div>
@@ -316,12 +360,27 @@
       <button id="draw" class="btn primary" disabled>
         <span class="step">3</span>
         <svg class="i" viewBox="0 0 24 24"><path d="m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z"/></svg>AI draw</button>
+      <button id="teach" class="btn" disabled>
+        <svg class="i" viewBox="0 0 24 24"><path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></svg>Teach me</button>
     </div>
   </div>
 </header>
 
 <div id="main">
-  <div id="canvas-wrap"><canvas id="canvas"></canvas><div id="region-box"></div><div id="sel-box"></div><div id="marquee"></div><div id="brush-cursor"></div></div>
+  <div id="canvas-wrap"><canvas id="canvas"></canvas><canvas id="guide" aria-hidden="true"></canvas><div id="region-box"></div><div id="sel-box"></div><div id="marquee"></div><div id="brush-cursor"></div>
+    <div id="tutorial" class="tutorial-card" hidden role="region" aria-label="Tutorial">
+      <div class="tut-head"><span class="tut-step" id="tut-step"></span><span class="tut-title" id="tut-title"></span></div>
+      <p id="tut-text"></p>
+      <p class="tut-note" id="tut-note"></p>
+      <div class="tut-controls">
+        <button id="tut-prev" class="btn small">‹ Prev</button>
+        <button id="tut-next" class="btn small primary">Next ›</button>
+        <label title="Guide opacity">Guide <input id="tut-opacity" type="range" min="10" max="100" value="60" aria-label="Guide opacity"></label>
+        <label><input id="tut-show" type="checkbox" checked> Show</label>
+        <button id="tut-exit" class="btn small tut-exit">Exit tutorial</button>
+      </div>
+    </div>
+  </div>
 
   <aside id="ai-panel" class="panel" data-default-width="360" style="width: 360px">
     <div class="resizer" role="separator" aria-orientation="vertical" aria-label="Resize the AI reasoning panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
@@ -366,6 +425,63 @@
       <span class="badge" id="log-count" hidden></span>
     </button>
   </aside>
+
+  <aside id="help-panel" class="panel collapsed" data-default-width="320" style="width: 320px">
+    <div class="resizer" role="separator" aria-orientation="vertical" aria-label="Resize the how-to-use panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
+    <div class="panel-head">
+      <h2><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>How to use</h2>
+      <button class="btn icon-only collapse-btn" aria-label="Collapse the how-to-use panel" title="Collapse">
+        <svg class="i" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+    </div>
+    <div id="help-body">
+      <p>You and the AI take turns. The AI suggests and sketches ideas; you decide what stays and you can learn to draw it yourself.</p>
+
+      <h3>Quick start</h3>
+      <ol>
+        <li><b>Draw</b> something on the white canvas with the <b>Pen</b>.</li>
+        <li>Click <b>1 Ask AI</b>. The AI looks at your drawing and suggests what to add next. The suggestion appears in the instruction box, where you can edit it or write your own idea.</li>
+        <li>Choose where the AI works under <b>AI turn</b>: <b>Whole canvas</b>, or <b>Marked region</b>, then drag a box on the canvas with <b>Mark region</b>.</li>
+        <li>Click <b>2 Get reference image</b> in the AI reasoning panel to see a picture of the idea. Untick <b>Colour</b> for black-and-white line art.</li>
+        <li>Then either:
+          <ul>
+            <li><b>3 AI draw</b>: the AI draws it onto the canvas as strokes you can move, erase or undo.</li>
+            <li><b>Teach me</b>: draw it yourself, one part at a time, by tracing a light blue guide.</li>
+          </ul>
+        </li>
+      </ol>
+
+      <h3>Tools</h3>
+      <ul>
+        <li><b>Pen</b> <kbd>P</kbd>: draw. Set the size and colour under <b>Brush</b>.</li>
+        <li><b>Eraser</b> <kbd>E</kbd>: rub out any part of the drawing.</li>
+        <li><b>Select</b> <kbd>V</kbd>: click a drawing or drag a box around part of it, then drag to move it. <kbd>Delete</kbd> removes it, <kbd>Esc</kbd> deselects.</li>
+        <li><b>Mark region</b> <kbd>R</kbd>: drag a box where the AI should draw.</li>
+        <li><b>Background</b>: fill the whole canvas with a colour; <b>White</b> resets it.</li>
+      </ul>
+
+      <h3>Teach me</h3>
+      <ul>
+        <li>Each step shows one part in <b>blue</b>, with a short instruction. Trace it with the pen.</li>
+        <li><b>Next</b> moves on; parts you have done turn grey. <b>Prev</b> goes back.</li>
+        <li>Use the <b>Guide</b> slider to fade the guide and <b>Show</b> to hide it and check your work.</li>
+        <li><b>Finish</b> or <b>Exit tutorial</b> removes the guide. It is never part of your drawing.</li>
+      </ul>
+
+      <h3>Handy</h3>
+      <ul>
+        <li><kbd>⌘</kbd><kbd>Z</kbd> / <kbd>Ctrl</kbd><kbd>Z</kbd> undoes anything, including AI draws and Clear.</li>
+        <li><kbd>⌘</kbd><kbd>S</kbd> / <kbd>Ctrl</kbd><kbd>S</kbd> or the download button saves a PNG.</li>
+        <li><kbd>Enter</kbd> in the instruction box gets a reference image; <kbd>Shift</kbd><kbd>Enter</kbd> adds a new line.</li>
+        <li>The <b>Turn log</b> records every turn and who proposed and drew it.</li>
+        <li>Collapse any side panel with its arrow, or drag its left edge to resize it.</li>
+      </ul>
+    </div>
+    <button class="rail" aria-label="Expand the how-to-use panel" title="Expand how to use">
+      <svg class="i" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+      <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+      <span class="rail-label">How to use</span>
+    </button>
+  </aside>
 </div>
 
 <script>
@@ -386,6 +502,8 @@
 
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
+  const guide = document.getElementById('guide');
+  const gctx = guide.getContext('2d');
   const undoBtn = document.getElementById('undo');
   const clearBtn = document.getElementById('clear');
   const downloadBtn = document.getElementById('download');
@@ -407,6 +525,18 @@
   let selecting = null;     // drag origin {x, y} while marking a region
   let currentRef = null;    // {img, prompt: {text, source}, url} of the latest reference image
   let aiDrawSpent = false;  // AI draw is single-use until Ask AI or a new reference succeeds
+  let tutorial = null;      // active "Teach me" tutorial: {area, mode, steps, index, prompt, refUrl}
+  const teachBtn = document.getElementById('teach');
+  const tutCard = document.getElementById('tutorial');
+  const tutStep = document.getElementById('tut-step');
+  const tutTitle = document.getElementById('tut-title');
+  const tutText = document.getElementById('tut-text');
+  const tutNote = document.getElementById('tut-note');
+  const tutPrev = document.getElementById('tut-prev');
+  const tutNext = document.getElementById('tut-next');
+  const tutOpacity = document.getElementById('tut-opacity');
+  const tutShow = document.getElementById('tut-show');
+  const tutExit = document.getElementById('tut-exit');
 
   const API_URL = 'http://127.0.0.1:5001/api/reason';
   const REF_API_URL = 'http://127.0.0.1:5001/api/reference';
@@ -538,6 +668,12 @@
     canvas.width = Math.round(rect.width * dpr);
     canvas.height = Math.round(rect.height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    guide.width = canvas.width;
+    guide.height = canvas.height;
+    guide.style.width = rect.width + 'px';
+    guide.style.height = rect.height + 'px';
+    gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    renderGuide();
     // Drawing and region are in css px from the top-left, so they survive a resize;
     // only clip the region to the new bounds (panel drags and collapses resize often).
     if (region) {
@@ -549,44 +685,46 @@
 
   // Eraser strokes cut pixels out of everything beneath them (destination-out).
   // Traced strokes (s.variable) carry a width per point (p.w), taken from the image.
-  function drawStroke(s) {
+  // target defaults to the main canvas; the tutorial guide layer passes its own context.
+  function drawStroke(s, target) {
+    const g = target || ctx;
     const points = s.points;
     if (!points.length) return;
     const color = s.color || BRUSH_COLOR;
     const widthAt = function (p) { return p.w || s.size; };
-    ctx.save();
-    if (s.erase) ctx.globalCompositeOperation = 'destination-out';
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    g.save();
+    if (s.erase) g.globalCompositeOperation = 'destination-out';
+    g.strokeStyle = color;
+    g.fillStyle = color;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
     if (points.length === 1) {
-      ctx.beginPath();
-      ctx.arc(points[0].x, points[0].y, widthAt(points[0]) / 2, 0, Math.PI * 2);
-      ctx.fill();
+      g.beginPath();
+      g.arc(points[0].x, points[0].y, widthAt(points[0]) / 2, 0, Math.PI * 2);
+      g.fill();
     } else if (!s.variable) {
-      ctx.lineWidth = s.size;
-      ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-      ctx.stroke();
+      g.lineWidth = s.size;
+      g.beginPath();
+      g.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
+      g.stroke();
     } else {
       // Draw runs of consecutive segments that share a width (rounded to 0.5px).
       const segWidth = function (i) { return Math.round(widthAt(points[i - 1]) + widthAt(points[i])) / 2; };
       let i = 1;
       while (i < points.length) {
         const lw = segWidth(i);
-        ctx.lineWidth = lw;
-        ctx.beginPath();
-        ctx.moveTo(points[i - 1].x, points[i - 1].y);
+        g.lineWidth = lw;
+        g.beginPath();
+        g.moveTo(points[i - 1].x, points[i - 1].y);
         while (i < points.length && segWidth(i) === lw) {
-          ctx.lineTo(points[i].x, points[i].y);
+          g.lineTo(points[i].x, points[i].y);
           i++;
         }
-        ctx.stroke();
+        g.stroke();
       }
     }
-    ctx.restore();
+    g.restore();
   }
 
   // ---- Image → strokes (used by AI draw) ----
@@ -1168,11 +1306,18 @@
     let drawBlock = '';
     if (needsRegion) drawBlock = 'AI draws on a marked region: use Mark region to drag a box on the canvas first.';
     else if (!currentRef) drawBlock = 'Generate a reference image before using AI draw.';
+    else if (tutorial) drawBlock = 'Finish or exit the tutorial first.';
     else if (aiDrawSpent) drawBlock = 'AI draw used. Click Ask AI or Get reference image to enable it again.';
     if (drawBlock) hint += ' ' + drawBlock;
     refHint.textContent = hint;
     drawBtn.disabled = !!drawBlock || fetchingRef;
     drawBtn.title = drawBlock;
+    // Teach me: same preconditions as AI draw, but not single-use.
+    const teachBlock = needsRegion ? 'Mark a region on the canvas first.'
+      : !currentRef ? 'Generate a reference image first.'
+      : tutorial ? 'A tutorial is already running.' : '';
+    teachBtn.disabled = !!teachBlock || fetchingRef;
+    teachBtn.title = teachBlock || 'Learn to draw the reference yourself, step by step, by tracing a guide';
   }
 
   // Typical pen width of the human's own strokes (median), else the current pen size.
@@ -1256,6 +1401,368 @@
       '[' + mode + '] ' + p.text + ' (' + traced.length + ' stroke' + (traced.length > 1 ? 's' : '') + ')',
       currentRef.url);
   }
+
+  // ---- Tutorial mode ("Teach me") ----
+  // Splits the traced reference into ordered steps the human traces themselves.
+  // Guides are drawn only on the #guide layer, never into #canvas.
+
+  const TUTORIAL_API_URL = 'http://127.0.0.1:5001/api/tutorial';
+  const GUIDE_CURRENT = '#2f6fe4';   // this step's guide
+  const GUIDE_DONE = '#b9bfca';      // earlier steps, greyed out
+  const STEP_KINDS = {
+    first: { title: 'Main shape', instruction: 'Start with the biggest blue shape to set the size and position.' },
+    part: { title: 'Next part', instruction: 'Trace the blue part that joins what you have drawn.' },
+    details: { title: 'Details', instruction: 'Add the small blue details.' },
+    fill: { title: 'Colour and fill', instruction: 'Colour in the blue areas.' }
+  };
+  const MAX_STEPS = 6;
+  const MINOR_PART = 0.12;   // parts smaller than this share of the biggest part are details
+  const FILL_LUM_GAP = 40;   // colours this much lighter than the darkest ink count as fills, not outlines
+
+  const hexRgb = function (hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+
+  // Path length plus bounding-box size: long, far-reaching strokes are the big shapes.
+  function strokeImportance(s) {
+    let len = 0, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    s.points.forEach(function (p, i) {
+      if (i) len += Math.hypot(p.x - s.points[i - 1].x, p.y - s.points[i - 1].y);
+      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+    });
+    return len + Math.hypot(x1 - x0, y1 - y0) + s.size;
+  }
+
+  function strokeBounds(s) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    s.points.forEach(function (p) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); });
+    return { x0: x0, y0: y0, x1: x1, y1: y1 };
+  }
+
+  // Unit direction leaving a stroke at one end (looking a few px along it).
+  function endDirection(s, atStart) {
+    const pts = atStart ? s.points : s.points.slice().reverse();
+    const a = pts[0];
+    let b = pts[pts.length - 1];
+    for (let i = 1; i < pts.length; i++) {
+      if (Math.hypot(pts[i].x - a.x, pts[i].y - a.y) >= 8) { b = pts[i]; break; }
+    }
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+  }
+
+  // Groups dark strokes into parts. Tracing splits lines where they meet, so a circle
+  // touched by a trunk comes out as several arcs. At each meeting point, the strokes
+  // that continue smoothly through it belong to the same shape; a line that hits a
+  // shape side-on (a T-junction) stays a separate part.
+  function groupIntoParts(strokes) {
+    const parent = strokes.map(function (_, i) { return i; });
+    const find = function (i) { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i; };
+    const union = function (a, b) { parent[find(a)] = find(b); };
+    const ends = [];
+    strokes.forEach(function (s, i) {
+      if (s.points.length < 2) return;
+      [true, false].forEach(function (atStart) {
+        const p = atStart ? s.points[0] : s.points[s.points.length - 1];
+        ends.push({ i: i, x: p.x, y: p.y, dir: endDirection(s, atStart), tol: Math.max(4, (p.w || s.size) * 1.5) });
+      });
+    });
+    const used = new Uint8Array(ends.length);
+    ends.forEach(function (e, n) {
+      if (used[n]) return;
+      const cluster = [n];
+      used[n] = 1;
+      ends.forEach(function (f, m) {
+        if (!used[m] && Math.hypot(f.x - e.x, f.y - e.y) <= Math.max(e.tol, f.tol)) { cluster.push(m); used[m] = 1; }
+      });
+      if (cluster.length === 2) { union(ends[cluster[0]].i, ends[cluster[1]].i); return; }   // a break in one line
+      // Pair the most nearly opposite directions (smooth continuations) first.
+      const pairs = [];
+      cluster.forEach(function (a, x) {
+        cluster.slice(x + 1).forEach(function (b) {
+          const dot = ends[a].dir.x * ends[b].dir.x + ends[a].dir.y * ends[b].dir.y;
+          if (dot < -0.5) pairs.push({ a: a, b: b, dot: dot });
+        });
+      });
+      pairs.sort(function (p, q) { return p.dot - q.dot; });
+      const paired = new Set();
+      pairs.forEach(function (p) {
+        if (paired.has(p.a) || paired.has(p.b)) return;
+        paired.add(p.a); paired.add(p.b);
+        union(ends[p.a].i, ends[p.b].i);
+      });
+    });
+    const groups = new Map();
+    strokes.forEach(function (s, i) {
+      const r = find(i);
+      if (!groups.has(r)) groups.set(r, []);
+      groups.get(r).push(s);
+    });
+    return Array.from(groups.values()).map(function (list) {
+      const b = list.map(strokeBounds).reduce(function (m, q) {
+        return { x0: Math.min(m.x0, q.x0), y0: Math.min(m.y0, q.y0), x1: Math.max(m.x1, q.x1), y1: Math.max(m.y1, q.y1) };
+      });
+      return { strokes: list, bounds: b, imp: list.reduce(function (t, s) { return t + strokeImportance(s); }, 0) };
+    });
+  }
+
+  // A part that is one straight line touching the same bigger part at both ends is a
+  // closing edge of that shape (a house's left wall between roof and ground): merge it in.
+  function mergeClosingEdges(parts) {
+    const near = function (p, part, tol) {
+      return part.strokes.some(function (s) {
+        return s.points.some(function (q, j) {
+          return j === 0 ? Math.hypot(p.x - q.x, p.y - q.y) <= tol : distToSegment(p, s.points[j - 1], q) <= tol;
+        });
+      });
+    };
+    let merged = true;
+    while (merged) {
+      merged = false;
+      for (let i = 0; i < parts.length && !merged; i++) {
+        const p = parts[i];
+        if (p.strokes.length !== 1 || p.strokes[0].points.length < 2) continue;
+        const s = p.strokes[0], a = s.points[0], b = s.points[s.points.length - 1];
+        let len = 0;
+        s.points.forEach(function (q, j) { if (j) len += Math.hypot(q.x - s.points[j - 1].x, q.y - s.points[j - 1].y); });
+        if (!len || Math.hypot(b.x - a.x, b.y - a.y) / len < 0.95) continue;   // not straight
+        const tol = Math.max(4, s.size * 1.5);
+        for (let j = 0; j < parts.length; j++) {
+          const q = parts[j];
+          if (j === i || q.imp <= p.imp || !near(a, q, tol) || !near(b, q, tol)) continue;
+          q.strokes = q.strokes.concat(p.strokes);
+          q.imp += p.imp;
+          q.bounds = {
+            x0: Math.min(q.bounds.x0, p.bounds.x0), y0: Math.min(q.bounds.y0, p.bounds.y0),
+            x1: Math.max(q.bounds.x1, p.bounds.x1), y1: Math.max(q.bounds.y1, p.bounds.y1)
+          };
+          parts.splice(i, 1);
+          merged = true;
+          break;
+        }
+      }
+    }
+    return parts;
+  }
+
+  function boundsGap(a, b) {
+    const dx = Math.max(0, a.x0 - b.x1, b.x0 - a.x1), dy = Math.max(0, a.y0 - b.y1, b.y0 - a.y1);
+    return Math.hypot(dx, dy);
+  }
+
+  // One part per step, in a logical order: the biggest part first, then whichever
+  // part sits closest to what is already drawn (biggest first on ties), then the
+  // small details together, then lighter colour fills. At most 6 steps.
+  function splitIntoSteps(strokes) {
+    // Outlines are the darkest ink; noticeably lighter colours (a red roof, a brown door) are fills.
+    const lums = strokes.map(function (s) { return lum(hexRgb(s.color || '#000000')); });
+    const darkest = Math.min.apply(null, lums);
+    const scored = strokes.map(function (s, i) { return { s: s, fill: lums[i] > darkest + FILL_LUM_GAP }; });
+    // A reference without dark outlines (say, an all-green tree) has no fill step.
+    if (scored.every(function (x) { return x.fill; })) scored.forEach(function (x) { x.fill = false; });
+    const lines = scored.filter(function (x) { return !x.fill; }).map(function (x) { return x.s; });
+    const fills = scored.filter(function (x) { return x.fill; }).map(function (x) { return x.s; });
+
+    const parts = mergeClosingEdges(groupIntoParts(lines)).sort(function (a, b) { return b.imp - a.imp; });
+    const max = parts.length ? parts[0].imp : 0;
+    let majors = parts.filter(function (p) { return p.imp >= MINOR_PART * max; });
+    let minors = parts.filter(function (p) { return p.imp < MINOR_PART * max; });
+    // Too many parts: the smallest ones join the details step (leaving room for it and the fill step).
+    const fillSteps = fills.length ? 1 : 0;
+    if (majors.length > MAX_STEPS - fillSteps - (minors.length ? 1 : 0)) {
+      const room = MAX_STEPS - fillSteps - 1;
+      minors = majors.slice(room).concat(minors);
+      majors = majors.slice(0, room);
+    }
+
+    // Order: biggest first, then the nearest remaining part to what's drawn so far.
+    const ordered = [];
+    const left = majors.slice();
+    while (left.length) {
+      let best = 0;
+      if (ordered.length) {
+        let bestGap = Infinity;
+        left.forEach(function (p, i) {
+          const gap = Math.min.apply(null, ordered.map(function (o) { return boundsGap(p.bounds, o.bounds); }));
+          if (gap < bestGap - 1 || (Math.abs(gap - bestGap) <= 1 && p.imp > left[best].imp)) { bestGap = gap; best = i; }
+        });
+      }
+      ordered.push(left.splice(best, 1)[0]);
+    }
+
+    const steps = ordered.map(function (p, i) { return { kind: i === 0 ? 'first' : 'part', strokes: p.strokes }; });
+    if (minors.length) steps.push({ kind: 'details', strokes: minors.reduce(function (a, p) { return a.concat(p.strokes); }, []) });
+    if (fills.length) steps.push({ kind: 'fill', strokes: fills });
+    return steps.map(function (st) {
+      return { kind: st.kind, strokes: st.strokes, title: STEP_KINDS[st.kind].title, instruction: STEP_KINDS[st.kind].instruction };
+    });
+  }
+
+  function renderGuide() {
+    gctx.save();
+    gctx.setTransform(1, 0, 0, 1, 0, 0);
+    gctx.clearRect(0, 0, guide.width, guide.height);
+    gctx.restore();
+    if (!tutorial) return;
+    const a = tutorial.area;
+    gctx.save();
+    gctx.beginPath();
+    gctx.rect(a.x, a.y, a.w, a.h);   // clipped to the marked region, like AI draw
+    gctx.clip();
+    tutorial.steps.forEach(function (st, i) {
+      if (i > tutorial.index) return;
+      const color = i === tutorial.index ? GUIDE_CURRENT : GUIDE_DONE;
+      st.strokes.forEach(function (s) { drawStroke(Object.assign({}, s, { color: color, erase: false }), gctx); });
+    });
+    gctx.restore();
+  }
+
+  // Small PNG of the area for Claude: earlier steps grey, this step black.
+  function stepPreview(t, index) {
+    const a = t.area;
+    const k = Math.min(1, 256 / Math.max(a.w, a.h));
+    const off = document.createElement('canvas');
+    off.width = Math.max(1, Math.round(a.w * k));
+    off.height = Math.max(1, Math.round(a.h * k));
+    const pctx = off.getContext('2d');
+    pctx.fillStyle = '#fff';
+    pctx.fillRect(0, 0, off.width, off.height);
+    pctx.setTransform(k, 0, 0, k, -a.x * k, -a.y * k);
+    t.steps.forEach(function (st, i) {
+      if (i > index) return;
+      const color = i === index ? '#000000' : '#bbbbbb';
+      st.strokes.forEach(function (s) { drawStroke(Object.assign({}, s, { color: color, erase: false }), pctx); });
+    });
+    return off.toDataURL('image/png');
+  }
+
+  function imagePng(img, maxSide) {
+    const k = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const off = document.createElement('canvas');
+    off.width = Math.max(1, Math.round(img.naturalWidth * k));
+    off.height = Math.max(1, Math.round(img.naturalHeight * k));
+    const octx = off.getContext('2d');
+    octx.fillStyle = '#fff';
+    octx.fillRect(0, 0, off.width, off.height);
+    octx.drawImage(img, 0, 0, off.width, off.height);
+    return off.toDataURL('image/png');
+  }
+
+  function showStep() {
+    const t = tutorial;
+    if (!t) return;
+    const st = t.steps[t.index], n = t.steps.length;
+    tutStep.textContent = 'Step ' + (t.index + 1) + ' of ' + n;
+    tutTitle.textContent = st.title;
+    tutText.textContent = st.instruction;
+    tutNote.textContent = t.textStatus === 'loading' ? 'Writing step-by-step tips…'
+      : t.textStatus === 'failed' ? 'Couldn’t fetch written tips, so just follow the blue guide.' : '';
+    tutPrev.disabled = t.index === 0;
+    tutNext.textContent = t.index === n - 1 ? 'Finish ✓' : 'Next ›';
+    renderGuide();
+  }
+
+  // Claude writes the step text; the tutorial works without it (generic text).
+  async function fetchTutorialText(t, context) {
+    try {
+      const res = await fetch(TUTORIAL_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instruction: t.prompt.text,
+          mode: t.mode,
+          area: context.area,
+          canvas_image_base64: context.canvas_image_base64,
+          reference_image_base64: t.refImage,
+          steps: t.steps.map(function (st, i) {
+            return { kind: st.kind, stroke_count: st.strokes.length, preview_base64: stepPreview(t, i) };
+          })
+        })
+      });
+      let data = null;
+      try { data = await res.json(); } catch (_) {}
+      if (!res.ok) throw new Error((data && data.error) || 'Server returned ' + res.status);
+      if (!data || !Array.isArray(data.steps) || data.steps.length !== t.steps.length) throw new Error('Unexpected response from server');
+      data.steps.forEach(function (w, i) {
+        if (w && typeof w.title === 'string' && w.title.trim()) t.steps[i].title = w.title.trim();
+        if (w && typeof w.instruction === 'string' && w.instruction.trim()) t.steps[i].instruction = w.instruction.trim();
+      });
+      t.textStatus = 'ready';
+    } catch (err) {
+      console.warn('Tutorial text unavailable; using generic steps.', err);
+      t.textStatus = 'failed';
+    }
+    if (tutorial === t) showStep();
+  }
+
+  function startTutorial() {
+    if (teachBtn.disabled) return;
+    const mode = modeSel.value;
+    const area = mode === 'incremental'
+      ? Object.assign({}, region)
+      : { x: 0, y: 0, w: canvas.clientWidth, h: canvas.clientHeight };
+    let traced;
+    try {
+      traced = imageToStrokes(currentRef.img, area, 0, currentRef.color);
+    } catch (err) {
+      showCurrentRef('Could not convert the reference image into guide lines: ' + err.message);
+      return;
+    }
+    if (!traced.length) {
+      showCurrentRef('The reference image has no dark lines to trace. Try getting a new reference image.');
+      return;
+    }
+    // Snapshot for Claude before the tool switch below drops the marked region.
+    const context = referenceContext();
+    tutorial = {
+      area: area,
+      mode: mode,
+      steps: splitIntoSteps(traced),
+      index: 0,
+      prompt: currentRef.prompt,
+      refUrl: currentRef.url,
+      refImage: imagePng(currentRef.img, 512),
+      textStatus: 'loading'
+    };
+    choose(toolSel, 'pen');   // the human traces with the normal brush
+    tutShow.checked = true;
+    guide.style.display = '';
+    guide.style.opacity = tutOpacity.value / 100;
+    tutCard.hidden = false;
+    showStep();
+    updateRefControls();
+    fetchTutorialText(tutorial, context);
+  }
+
+  // Finish or exit: drop the overlay and log the turn (AI proposed, human drew).
+  function endTutorial(finished) {
+    const t = tutorial;
+    if (!t) return;
+    tutorial = null;
+    renderGuide();
+    tutCard.hidden = true;
+    const n = t.steps.length;
+    const lines = t.steps.map(function (st, i) { return (i + 1) + '. ' + st.title + ': ' + st.instruction; }).join('\n');
+    addTurn('ai', 'human',
+      '[tutorial' + (finished ? '' : ', exited at step ' + (t.index + 1) + ' of ' + n) + '] ' + t.prompt.text + '\n' + lines,
+      t.refUrl);
+    updateRefControls();
+  }
+
+  teachBtn.addEventListener('click', startTutorial);
+  tutPrev.addEventListener('click', function () {
+    if (tutorial && tutorial.index > 0) { tutorial.index--; showStep(); }
+  });
+  tutNext.addEventListener('click', function () {
+    if (!tutorial) return;
+    if (tutorial.index === tutorial.steps.length - 1) { endTutorial(true); return; }
+    tutorial.index++;
+    showStep();
+  });
+  tutOpacity.addEventListener('input', function () { guide.style.opacity = tutOpacity.value / 100; });
+  tutShow.addEventListener('change', function () { guide.style.display = tutShow.checked ? '' : 'none'; });
+  tutExit.addEventListener('click', function () { endTutorial(false); });
 
   function setRefResult(className, text) {
     refResult.textContent = '';
@@ -1711,6 +2218,16 @@
       setWidth(p.getBoundingClientRect().width + step, true);
     });
   });
+
+  // "How to use" opens by itself on a viewer's first visit, then starts collapsed.
+  try {
+    if (!localStorage.getItem('helpSeen')) {
+      document.getElementById('help-panel').classList.remove('collapsed');
+      localStorage.setItem('helpSeen', '1');
+    }
+  } catch (_) {
+    document.getElementById('help-panel').classList.remove('collapsed');
+  }
 
   // Turn count on the collapsed turn log's rail.
   const logCount = document.getElementById('log-count');

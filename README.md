@@ -50,6 +50,7 @@ Every action is recorded in the **turn log** (proposer, executor, text, canvas t
   - Background fill colour for the whole canvas (the eraser reveals it; White resets it). It is included in everything sent to Claude.
   - Undo for every action (Cmd/Ctrl+Z), and Clear (which can also be undone).
 - **Where AI draws** (toolbar, *AI turn*): *Marked region* (incremental) replaces only the region you mark. *Whole canvas* (overwrite) replaces everything.
+- **How to use panel:** a quick-start guide, the tools and their shortcuts, and how Teach me works. It opens by itself on a viewer's first visit and starts collapsed afterwards.
 - **Layout:** the AI reasoning and turn log panels can each be collapsed to a slim rail and resized by dragging their left edge (double-click the edge to reset; widths are remembered). On load, AI reasoning is open and the turn log is collapsed, showing a turn count.
 - **Download:** the Download button (or ⌘S / Ctrl+S) saves the drawing as a PNG named `drawing-YYYY-MM-DD-HHMM.png`, at full screen resolution and including the background colour. Selection boxes and the marked region are not included.
 - **Keyboard:** P pen, E eraser, V select, R mark region; ⌘S / Ctrl+S download; ⌘Z / Ctrl+Z undo; Delete removes a selection; Escape deselects; Enter in the instruction box gets a reference image.
@@ -59,6 +60,15 @@ Every action is recorded in the **turn log** (proposer, executor, text, canvas t
   - When AI draws on a marked region, Get reference image needs a marked region.
   - AI draw needs a reference image.
   - AI draw is single-use until you Ask AI again or get a new reference.
+
+### Tutorial mode ("Teach me")
+
+An alternative to AI draw that keeps the human drawing. After getting a reference image, click **Teach me** (next to AI draw). The reference is traced in the browser exactly as AI draw would trace it, but instead of being placed on the canvas, the strokes are split into up to 6 steps, one part of the drawing at a time, in a logical order: the biggest part first, then whichever part joins what is already drawn (a tree's crown, then its trunk, then the ground), then the small details together, then colour and fill. Parts are found from the traced outline strokes: lines that continue smoothly through a junction belong to the same shape, a line that meets a shape side-on is a separate part, and a straight line closing off a shape (a wall between roof and ground) joins that shape. Each step shows a one-sentence instruction and a light blue guide to trace with the normal brush; earlier steps turn grey. The tutorial card has Prev / Next, a guide opacity slider, a Show toggle and Exit tutorial. Finishing or exiting removes the guide and logs one turn (proposer `ai`, executor `human`) with the step instructions.
+
+- The guide is drawn on its own `<canvas id="guide">` layer above the drawing, with `pointer-events: none`. It is never drawn into the main canvas, so it never appears in what is sent to Claude, in turn-log thumbnails, in undo history or in downloads.
+- Claude only writes the step text (`POST /api/tutorial`). If that call fails, the guides still work with generic step text.
+- No extra image-generation calls: the tutorial reuses the current reference image.
+- In marked-region mode the guide is clipped to the region; unlike AI draw, nothing already on the canvas is removed.
 
 ## Setup
 
@@ -95,6 +105,7 @@ All settings are environment variables, read from `.env`:
 | `ANTHROPIC_MODEL` | `claude-sonnet-5-5` | Model for Ask AI reasoning |
 | `PLANNER_MODEL` | `claude-opus-5-5` | Model that writes the image prompt |
 | `PLANNER_EFFORT` | `low` | Planner effort (`low` to `max`); higher is slower and more careful |
+| `TUTORIAL_EFFORT` | `low` | Effort for writing tutorial step text (uses `ANTHROPIC_MODEL`) |
 | `FAL_MODEL` | `fal-ai/flux/schnell` | Text-to-image model for references |
 
 Tracing constants (`TRACE_MAX_SIDE`, `MAX_COLORS`, `BG_LIGHTNESS`, …) are at the top of the tracing section in `index.html`. Style tiers (`STYLE_TIERS`) and line-weight phrases (`LINE_WEIGHTS`) are at the top of `app.py`.
@@ -127,6 +138,14 @@ Response: `{ "image_url": "...", "image_data_uri": "data:...", "subject": "...",
 
 `image_data_uri` is a copy downloaded by the server, so the browser can trace it without cross-origin canvas errors. If the planner call fails, the endpoint falls back to a template prompt instead of erroring.
 
+### `POST /api/tutorial`
+
+Writes one beginner-friendly instruction per tutorial step (structured output, with the server-side refusal fallback).
+
+Request: `{ "instruction", "mode", "area", "canvas_image_base64", "reference_image_base64", "steps": [{ "kind", "stroke_count", "preview_base64" }] }`. Each step preview shows earlier steps in grey and that step's strokes in black. At most 6 steps.
+
+Response: `{ "steps": [{ "title", "instruction" }] }`, always one entry per step sent. Errors return `{ "error" }` with 400 or 502; the frontend then keeps generic step text.
+
 ### `POST /api/draw` (unused by the frontend)
 This is an earlier SDXL inpainting endpoint, kept for reference. Its safety checker false-positives on line sketches and returns black images, which is why AI draw now traces the reference instead.
 
@@ -149,7 +168,7 @@ This is an earlier SDXL inpainting endpoint, kept for reference. Its safety chec
 ## Project structure
 
 ```
-app.py            Flask backend: /api/reason, /api/reference (+ legacy /api/draw)
+app.py            Flask backend: /api/reason, /api/reference, /api/tutorial (+ legacy /api/draw)
 index.html        Entire frontend: canvas, tools, tracing, AI panels, turn log (no build step)
 requirements.txt  Python dependencies
 .env.example      Template for .env (placeholders only)
