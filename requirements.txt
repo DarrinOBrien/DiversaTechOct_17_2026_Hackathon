@@ -4,3 +4,4 @@ anthropic>=0.40
 python-dotenv>=1.0
 fal-client>=0.5
 certifi
+gunicorn

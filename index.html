@@ -538,8 +538,12 @@
   const tutShow = document.getElementById('tut-show');
   const tutExit = document.getElementById('tut-exit');
 
-  const API_URL = 'http://127.0.0.1:5001/api/reason';
-  const REF_API_URL = 'http://127.0.0.1:5001/api/reference';
+  // Local backend when opened from disk or localhost; the Render backend when deployed (e.g. on Vercel).
+  const RENDER_API_BASE = 'https://diversatechoct-17-2026-hackathon.onrender.com';
+  const IS_LOCAL = ['', 'localhost', '127.0.0.1'].includes(location.hostname);
+  const API_BASE = IS_LOCAL ? 'http://127.0.0.1:5001' : RENDER_API_BASE;
+  const API_URL = `${API_BASE}/api/reason`;
+  const REF_API_URL = `${API_BASE}/api/reference`;
   const MAX_CONTEXT_TURNS = 3;
   const reasonings = [];   // AI replies so far, sent back as context
   const suggestions = [];  // AI suggestions, parallel to reasonings
@@ -1406,7 +1410,7 @@
   // Splits the traced reference into ordered steps the human traces themselves.
   // Guides are drawn only on the #guide layer, never into #canvas.
 
-  const TUTORIAL_API_URL = 'http://127.0.0.1:5001/api/tutorial';
+  const TUTORIAL_API_URL = `${API_BASE}/api/tutorial`;
   const GUIDE_CURRENT = '#2f6fe4';   // this step's guide
   const GUIDE_DONE = '#b9bfca';      // earlier steps, greyed out
   const STEP_KINDS = {
