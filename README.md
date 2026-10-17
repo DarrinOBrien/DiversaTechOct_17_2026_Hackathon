@@ -4,6 +4,8 @@ A turn-based drawing canvas where a human and an AI draw together. The human ske
 
 Built for the DiversaTech hackathon, 17 October 2026.
 
+**Try it live:** [diversa-tech-oct-17-2026-hackathon.vercel.app](https://diversa-tech-oct-17-2026-hackathon.vercel.app?_vercel_share=i6jYKeuFNnuU0wFzObwPdJkqbUAlwLwT) (frontend on Vercel, backend on Render; the first AI request after a while idle can take about a minute while the backend wakes up).
+
 Contributors:
 - Darrin
 - Gabriel
