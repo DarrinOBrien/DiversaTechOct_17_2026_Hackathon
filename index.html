@@ -1,0 +1,1357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drawing Surface</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; background: #f0f0f0; }
+  #toolbar {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    background: #fff;
+    border-bottom: 1px solid #ccc;
+  }
+  button {
+    padding: 6px 14px;
+    font-size: 14px;
+    border: 1px solid #888;
+    border-radius: 4px;
+    background: #fafafa;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #e8e8e8; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  #main { position: absolute; top: 48px; left: 0; right: 0; bottom: 0; display: flex; }
+  #canvas-wrap { flex: 1; min-width: 0; position: relative; }
+  canvas { display: block; width: 100%; height: 100%; background: #fff; cursor: crosshair; }
+  #panel {
+    width: 320px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border-left: 1px solid #ccc;
+  }
+  #panel h2 { margin: 0; padding: 12px; font-size: 15px; border-bottom: 1px solid #eee; }
+  #reasoning { flex: 1; overflow-y: auto; padding: 12px; font-size: 14px; line-height: 1.45; }
+  #reasoning .entry { margin: 0 0 12px; padding-bottom: 12px; border-bottom: 1px solid #eee; white-space: pre-wrap; }
+  #reasoning .placeholder { color: #888; }
+  #reasoning .error { color: #b00020; }
+  #reasoning .loading { color: #555; display: flex; align-items: center; gap: 8px; }
+  #reference {
+    flex-shrink: 0;
+    max-height: 55%;
+    overflow-y: auto;
+    padding: 12px;
+    border-top: 2px solid #ccc;
+    background: #fafafa;
+  }
+  #reference h3 { margin: 0 0 8px; font-size: 14px; }
+  #ref-row { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+  #ref-input { width: 100%; padding: 6px 8px; font: 13px/1.4 system-ui, sans-serif; border: 1px solid #888; border-radius: 4px; resize: vertical; }
+  #ref-hint { margin: 6px 0 0; font-size: 12px; color: #666; }
+  #ref-actions { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  #pen-color { width: 32px; height: 28px; padding: 0 2px; border: 1px solid #888; border-radius: 4px; background: #fafafa; }
+  #ref-result { margin-top: 10px; font-size: 14px; }
+  #ref-result img { display: block; max-width: 100%; height: auto; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
+  #ref-result .error { color: #b00020; }
+  #ref-result .loading { color: #555; display: flex; align-items: center; gap: 8px; }
+  #log {
+    width: 260px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border-left: 1px solid #ccc;
+  }
+  #log h2 { margin: 0; padding: 12px; font-size: 15px; border-bottom: 1px solid #eee; }
+  #log-list { flex: 1; overflow-y: auto; padding: 8px; margin: 0; list-style: none; font-size: 13px; line-height: 1.4; }
+  #log-list .placeholder { color: #888; padding: 4px; }
+  .turn { padding: 8px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa; }
+  .turn-head { font-weight: 600; margin-bottom: 4px; }
+  .turn-head .who { font-weight: 400; color: #555; }
+  .turn img { display: block; max-width: 100%; height: auto; border: 1px solid #ccc; background: #fff; margin-bottom: 4px; }
+  .turn img.ref { max-width: 96px; }
+  .turn-text { white-space: pre-wrap; word-break: break-word; }
+  #toolbar select { padding: 5px 6px; font-size: 14px; border: 1px solid #888; border-radius: 4px; background: #fafafa; }
+  #toolbar label { font-size: 13px; color: #444; }
+  .tb-sep { width: 1px; height: 24px; background: #ddd; margin: 0 4px; }
+  #size { width: 90px; }
+  #size-val { font-size: 13px; color: #444; min-width: 22px; }
+  /* Overlays live in the DOM above the canvas, so they are never part of exports. */
+  #sel-box, #marquee, #brush-cursor { position: absolute; display: none; pointer-events: none; }
+  #sel-box { border: 1px dashed #1a73e8; box-shadow: 0 0 0 1px rgba(255,255,255,0.8); }
+  #marquee { border: 1px dashed #1a73e8; background: rgba(26, 115, 232, 0.08); }
+  #brush-cursor { border: 1px solid #555; border-radius: 50%; box-shadow: 0 0 0 1px rgba(255,255,255,0.8); }
+  #region-box {
+    position: absolute;
+    display: none;
+    pointer-events: none;
+    border: 2px dashed #e11;
+    background: rgba(238, 17, 17, 0.08);
+  }
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid #ccc; border-top-color: #333;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <button id="undo" disabled>Undo</button>
+  <button id="clear" disabled>Clear</button>
+  <button id="ask" disabled>Ask AI</button>
+  <span class="tb-sep"></span>
+  <label for="tool">Tool</label>
+  <select id="tool">
+    <option value="pen">Pen</option>
+    <option value="eraser">Eraser</option>
+    <option value="select">Select / move</option>
+    <option value="region">Mark region</option>
+  </select>
+  <label for="size">Size</label>
+  <input id="size" type="range" min="1" max="60" value="4">
+  <span id="size-val">4</span>
+  <input id="pen-color" type="color" value="#000000" title="Pen colour">
+  <span class="tb-sep"></span>
+  <label for="mode">AI draw mode</label>
+  <select id="mode">
+    <option value="overwrite">Overwrite</option>
+    <option value="incremental">Incremental</option>
+  </select>
+  <button id="draw" disabled>AI draw</button>
+</div>
+<div id="main">
+  <div id="canvas-wrap"><canvas id="canvas"></canvas><div id="region-box"></div><div id="sel-box"></div><div id="marquee"></div><div id="brush-cursor"></div></div>
+  <aside id="panel">
+    <h2>AI reasoning</h2>
+    <div id="reasoning"><p class="placeholder">Draw something, then click “Ask AI”.</p></div>
+    <section id="reference">
+      <h3>Reference image</h3>
+      <div id="ref-row">
+        <textarea id="ref-input" rows="3" maxlength="600" placeholder="Describe what to draw, or edit the AI's suggestion, e.g. “add a bright day with a smiling sun”"></textarea>
+        <div id="ref-actions">
+          <button id="ref-btn" disabled>Get reference image</button>
+          <label><input id="ref-color" type="checkbox" checked> Colour</label>
+        </div>
+      </div>
+      <p id="ref-hint"></p>
+      <div id="ref-result"></div>
+    </section>
+  </aside>
+  <aside id="log">
+    <h2>Turn log</h2>
+    <ol id="log-list"><li class="placeholder">No turns yet.</li></ol>
+  </aside>
+</div>
+
+<script>
+(function () {
+  const BRUSH_COLOR = '#000';
+  const HIT_TOLERANCE = 4;  // css px of slack when clicking a stroke with the select tool
+  const toolSizes = { pen: 4, eraser: 20 };  // remembered per tool
+
+  const sizeInput = document.getElementById('size');
+  const sizeVal = document.getElementById('size-val');
+  const penColor = document.getElementById('pen-color');
+  const refColor = document.getElementById('ref-color');
+  const selBox = document.getElementById('sel-box');
+  const marqueeBox = document.getElementById('marquee');
+  const brushCursor = document.getElementById('brush-cursor');
+
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const undoBtn = document.getElementById('undo');
+  const clearBtn = document.getElementById('clear');
+  const askBtn = document.getElementById('ask');
+  const panel = document.getElementById('reasoning');
+
+  const refBtn = document.getElementById('ref-btn');
+  const refInput = document.getElementById('ref-input');
+  const refHint = document.getElementById('ref-hint');
+  const refResult = document.getElementById('ref-result');
+  let fetchingRef = false;
+
+  const toolSel = document.getElementById('tool');
+  const modeSel = document.getElementById('mode');
+  const drawBtn = document.getElementById('draw');
+  const regionBox = document.getElementById('region-box');
+  const MIN_REGION = 8;     // css px; smaller selections are discarded
+  let region = null;        // {x, y, w, h} in css px, or null
+  let selecting = null;     // drag origin {x, y} while marking a region
+  let currentRef = null;    // {img, prompt: {text, source}, url} of the latest reference image
+  let aiDrawSpent = false;  // AI draw is single-use until Ask AI or a new reference succeeds
+
+  const API_URL = 'http://127.0.0.1:5001/api/reason';
+  const REF_API_URL = 'http://127.0.0.1:5001/api/reference';
+  const MAX_CONTEXT_TURNS = 3;
+  const reasonings = [];   // AI replies so far, sent back as context
+  const suggestions = [];  // AI suggestions, parallel to reasonings
+  let asking = false;
+
+  const THUMB_WIDTH = 160;
+  const logList = document.getElementById('log-list');
+  // { step, proposer, executor, reasoningText, referenceImageUrl?, canvasSnapshot }
+  const turns = [];
+
+  function canvasThumbnail() {
+    const off = document.createElement('canvas');
+    off.width = THUMB_WIDTH;
+    off.height = Math.max(1, Math.round(THUMB_WIDTH * canvas.height / canvas.width));
+    const octx = off.getContext('2d');
+    octx.fillStyle = '#fff';
+    octx.fillRect(0, 0, off.width, off.height);
+    octx.drawImage(canvas, 0, 0, off.width, off.height);
+    return off.toDataURL('image/png');
+  }
+
+  function addTurn(proposer, executor, reasoningText, referenceImageUrl) {
+    const turn = {
+      step: turns.length + 1,
+      proposer: proposer,
+      executor: executor,
+      reasoningText: reasoningText,
+      canvasSnapshot: canvasThumbnail()
+    };
+    if (referenceImageUrl) turn.referenceImageUrl = referenceImageUrl;
+    turns.push(turn);
+    renderLog();
+  }
+
+  function renderLog() {
+    logList.textContent = '';
+    for (let i = turns.length - 1; i >= 0; i--) {   // newest first
+      const t = turns[i];
+      const li = document.createElement('li');
+      li.className = 'turn';
+
+      const head = document.createElement('div');
+      head.className = 'turn-head';
+      head.appendChild(document.createTextNode('Step ' + t.step + ' '));
+      const who = document.createElement('span');
+      who.className = 'who';
+      who.textContent = 'proposer: ' + t.proposer + ' · executor: ' + t.executor;
+      head.appendChild(who);
+      li.appendChild(head);
+
+      const snap = new Image();
+      snap.src = t.canvasSnapshot;
+      snap.alt = 'Canvas at step ' + t.step;
+      li.appendChild(snap);
+
+      if (t.reasoningText) {
+        const txt = document.createElement('div');
+        txt.className = 'turn-text';
+        txt.textContent = t.reasoningText;
+        li.appendChild(txt);
+      }
+      if (t.referenceImageUrl) {
+        const ref = new Image();
+        ref.className = 'ref';
+        ref.src = t.referenceImageUrl;
+        ref.alt = 'Reference image for step ' + t.step;
+        li.appendChild(ref);
+      }
+      logList.appendChild(li);
+    }
+  }
+
+  // Canvas content, bottom to top. Items are never mutated; every change builds a
+  // new array via commit(), so undo just restores the previous array.
+  //   stroke: {kind: 'stroke', points: [{x, y}], size, erase, group?}
+  // Strokes sharing a group (one AI draw) are selected and moved together.
+  let items = [];
+  let nextGroup = 1;
+  const undoStack = [];
+  let current = null;          // stroke item in progress
+  let selection = new Set();   // indices into items (select tool)
+  let drag = null;             // select tool: {mode: 'move', start, offset} or {mode: 'marquee', start, rect}
+
+  function commit(next, keepSelection) {
+    undoStack.push(items);
+    items = next;
+    if (!keepSelection) selection = new Set();
+    updateSelectionBox();
+    redraw();
+    updateButtons();
+  }
+
+  function undo() {
+    if (!undoStack.length) return;
+    items = undoStack.pop();
+    selection = new Set();
+    updateSelectionBox();
+    redraw();
+    updateButtons();
+  }
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (region) setRegion(null);   // region is in css px of the old canvas size
+    redraw();
+  }
+
+  // Eraser strokes cut pixels out of everything beneath them (destination-out).
+  // Traced strokes (s.variable) carry a width per point (p.w), taken from the image.
+  function drawStroke(s) {
+    const points = s.points;
+    if (!points.length) return;
+    const color = s.color || BRUSH_COLOR;
+    const widthAt = function (p) { return p.w || s.size; };
+    ctx.save();
+    if (s.erase) ctx.globalCompositeOperation = 'destination-out';
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (points.length === 1) {
+      ctx.beginPath();
+      ctx.arc(points[0].x, points[0].y, widthAt(points[0]) / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (!s.variable) {
+      ctx.lineWidth = s.size;
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+      ctx.stroke();
+    } else {
+      // Draw runs of consecutive segments that share a width (rounded to 0.5px).
+      const segWidth = function (i) { return Math.round(widthAt(points[i - 1]) + widthAt(points[i])) / 2; };
+      let i = 1;
+      while (i < points.length) {
+        const lw = segWidth(i);
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.moveTo(points[i - 1].x, points[i - 1].y);
+        while (i < points.length && segWidth(i) === lw) {
+          ctx.lineTo(points[i].x, points[i].y);
+          i++;
+        }
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // ---- Image → strokes (used by AI draw) ----
+
+  const TRACE_MAX_SIDE = 640;   // working resolution for tracing
+  const INK_THRESHOLD = 128;    // black-and-white mode: luminance below this counts as ink
+  const BG_LIGHTNESS = 225;     // colour mode: pixels whose darkest channel is above this are background
+  const MAX_COLORS = 8;         // colour layers a reference is split into
+  const MIN_LAYER_PX = 12;      // colour layers smaller than this are noise
+
+  // Chamfer (3-4) distance from each ink pixel to the nearest background pixel,
+  // in thirds of a pixel. g has a 0 border.
+  function distanceTransform(g, w, h) {
+    const d = new Float32Array(g.length);
+    for (let i = 0; i < g.length; i++) d[i] = g[i] ? 1e9 : 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        if (d[i]) d[i] = Math.min(d[i], d[i - 1] + 3, d[i - w] + 3, d[i - w - 1] + 4, d[i - w + 1] + 4);
+      }
+    }
+    for (let y = h - 2; y >= 1; y--) {
+      for (let x = w - 2; x >= 1; x--) {
+        const i = y * w + x;
+        if (d[i]) d[i] = Math.min(d[i], d[i + 1] + 3, d[i + w] + 3, d[i + w + 1] + 4, d[i + w - 1] + 4);
+      }
+    }
+    return d;
+  }
+
+  // Labels 8-connected ink components and records each one's thickest pixel.
+  function componentPeaks(g, w, dist) {
+    const labels = new Int32Array(g.length);
+    const peaks = [];
+    const nb = [-1, 1, -w, w, -w - 1, -w + 1, w - 1, w + 1];
+    for (let i = 0; i < g.length; i++) {
+      if (!g[i] || labels[i]) continue;
+      const id = peaks.length + 1;
+      let peak = i;
+      const stack = [i];
+      labels[i] = id;
+      while (stack.length) {
+        const j = stack.pop();
+        if (dist[j] > dist[peak]) peak = j;
+        for (let k = 0; k < 8; k++) {
+          const n = j + nb[k];
+          if (g[n] && !labels[n]) { labels[n] = id; stack.push(n); }
+        }
+      }
+      peaks.push(peak);
+    }
+    return { labels: labels, peaks: peaks };
+  }
+
+  const lum = function (c) { return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]; };
+  const colorDist2 = function (a, b) {
+    return (a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) + (a[2] - b[2]) * (a[2] - b[2]);
+  };
+
+  // k-means palette of the ink colours; near-duplicate colours are merged.
+  function paletteOf(colors, k) {
+    const step = Math.max(1, Math.floor(colors.length / 6000));
+    const sample = [];
+    for (let i = 0; i < colors.length; i += step) sample.push(colors[i]);
+    sample.sort(function (a, b) { return lum(a) - lum(b); });
+    k = Math.min(k, sample.length);
+    let centres = [];
+    for (let c = 0; c < k; c++) centres.push(sample[Math.floor((c + 0.5) * sample.length / k)].slice());
+    for (let iter = 0; iter < 10; iter++) {
+      const sums = centres.map(function () { return [0, 0, 0, 0]; });
+      sample.forEach(function (p) {
+        let best = 0;
+        for (let c = 1; c < centres.length; c++) if (colorDist2(p, centres[c]) < colorDist2(p, centres[best])) best = c;
+        sums[best][0] += p[0]; sums[best][1] += p[1]; sums[best][2] += p[2]; sums[best][3]++;
+      });
+      centres = sums.filter(function (s) { return s[3]; })
+        .map(function (s) { return [s[0] / s[3], s[1] / s[3], s[2] / s[3]]; });
+    }
+    const merged = [];
+    centres.forEach(function (c) {
+      if (!merged.some(function (m) { return colorDist2(m, c) < 48 * 48; })) merged.push(c);
+    });
+    return merged;
+  }
+
+  // Anti-aliased edge pixels are blends of two touching colours (or of a colour and
+  // the white background). When a blend explains a pixel much better than any single
+  // palette colour, snap it to the nearer end of that blend (-1 = background), so
+  // edges don't form halo layers of their own or leave seams between colours.
+  function snapEdgePixel(c, palette, best) {
+    const cands = palette.concat([[255, 255, 255]]);
+    const bestD2 = colorDist2(c, palette[best]);
+    let bestRes = Infinity, snap = best;
+    for (let a = 0; a < cands.length; a++) {
+      for (let b = a + 1; b < cands.length; b++) {
+        const A = cands[a], B = cands[b];
+        const ab = [B[0] - A[0], B[1] - A[1], B[2] - A[2]];
+        const len2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
+        if (!len2) continue;
+        const t = Math.max(0, Math.min(1,
+          ((c[0] - A[0]) * ab[0] + (c[1] - A[1]) * ab[1] + (c[2] - A[2]) * ab[2]) / len2));
+        const res = colorDist2(c, [A[0] + t * ab[0], A[1] + t * ab[1], A[2] + t * ab[2]]);
+        if (res < bestRes) {
+          bestRes = res;
+          const end = t < 0.5 ? a : b;
+          snap = end === palette.length ? -1 : end;
+        }
+      }
+    }
+    return bestRes + 20 * 20 < bestD2 ? snap : best;
+  }
+
+  function toHex(c) {
+    return '#' + c.map(function (v) { return Math.round(v).toString(16).padStart(2, '0'); }).join('');
+  }
+
+  // Zhang–Suen thinning: erodes ink to 1-px-wide centrelines. g has a 0 border.
+  function thin(g, w, h) {
+    const del = [];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let pass = 0; pass < 2; pass++) {
+        del.length = 0;
+        for (let y = 1; y < h - 1; y++) {
+          for (let x = 1; x < w - 1; x++) {
+            const i = y * w + x;
+            if (!g[i]) continue;
+            const p2 = g[i - w], p3 = g[i - w + 1], p4 = g[i + 1], p5 = g[i + w + 1],
+                  p6 = g[i + w], p7 = g[i + w - 1], p8 = g[i - 1], p9 = g[i - w - 1];
+            const b = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+            if (b < 2 || b > 6) continue;
+            const a = (!p2 && p3) + (!p3 && p4) + (!p4 && p5) + (!p5 && p6) +
+                      (!p6 && p7) + (!p7 && p8) + (!p8 && p9) + (!p9 && p2);
+            if (a !== 1) continue;
+            if (pass === 0 ? (p2 && p4 && p6) || (p4 && p6 && p8)
+                           : (p2 && p4 && p8) || (p2 && p6 && p8)) continue;
+            del.push(i);
+          }
+        }
+        for (let k = 0; k < del.length; k++) g[del[k]] = 0;
+        if (del.length) changed = true;
+      }
+    }
+  }
+
+  // Walks a 1-px skeleton into polylines of grid indices.
+  function traceSkeleton(g, w, h) {
+    const nb = [-1, 1, -w, w, -w - 1, -w + 1, w - 1, w + 1];  // 4-neighbours first
+    const seen = new Uint8Array(g.length);
+    const degree = function (i) {
+      let d = 0;
+      for (let k = 0; k < 8; k++) d += g[i + nb[k]];
+      return d;
+    };
+    const visitedNeighbour = function (i, not) {
+      for (let k = 0; k < 8; k++) {
+        const n = i + nb[k];
+        if (g[n] && seen[n] && n !== not) return n;
+      }
+      return -1;
+    };
+    const walk = function (start) {
+      const line = [];
+      const join = visitedNeighbour(start, -1);   // reconnect to an earlier branch
+      if (join >= 0) line.push(join);
+      let cur = start;
+      seen[cur] = 1;
+      line.push(cur);
+      for (;;) {
+        let next = -1;
+        for (let k = 0; k < 8; k++) {
+          const n = cur + nb[k];
+          if (g[n] && !seen[n]) { next = n; break; }
+        }
+        if (next < 0) break;
+        seen[next] = 1;
+        line.push(next);
+        cur = next;
+      }
+      if (line.length > 2) {
+        const end = visitedNeighbour(cur, line[line.length - 2]);
+        if (end >= 0 && line.indexOf(end) < 0) line.push(end);
+      }
+      return line;
+    };
+    const lines = [];
+    // Start from line ends first, then pick up loops and leftovers.
+    for (let i = 0; i < g.length; i++) if (g[i] && !seen[i] && degree(i) === 1) lines.push(walk(i));
+    for (let i = 0; i < g.length; i++) if (g[i] && !seen[i]) lines.push(walk(i));
+    return lines;
+  }
+
+  // Ramer–Douglas–Peucker polyline simplification.
+  function simplify(pts, eps) {
+    if (pts.length < 3) return pts;
+    let maxD = 0, idx = 0;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const d = distToSegment(pts[i], pts[0], pts[pts.length - 1]);
+      if (d > maxD) { maxD = d; idx = i; }
+    }
+    if (maxD <= eps) return [pts[0], pts[pts.length - 1]];
+    return simplify(pts.slice(0, idx + 1), eps).slice(0, -1).concat(simplify(pts.slice(idx), eps));
+  }
+
+  // Converts an image into strokes fitted (without distortion) inside area. Each
+  // colour is traced separately into centrelines whose width at every point comes
+  // from the image (so filled shapes are rebuilt too); light colours go underneath
+  // and dark outlines on top.
+  function imageToStrokes(img, area, group, colorMode) {
+    const k = Math.min(1, TRACE_MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+    const gw = Math.max(1, Math.round(img.naturalWidth * k));
+    const gh = Math.max(1, Math.round(img.naturalHeight * k));
+    const off = document.createElement('canvas');
+    off.width = gw; off.height = gh;
+    const octx = off.getContext('2d');
+    octx.fillStyle = '#fff';
+    octx.fillRect(0, 0, gw, gh);
+    octx.drawImage(img, 0, 0, gw, gh);
+    const px = octx.getImageData(0, 0, gw, gh).data;   // throws if the image is cross-origin
+
+    // Ink pixels (grid has a 1-px empty border, needed by thinning) and their colours.
+    const w = gw + 2, h = gh + 2;
+    const inkIdx = [], inkCol = [];
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        const j = (y * gw + x) * 4;
+        const c = [px[j], px[j + 1], px[j + 2]];
+        const isInk = colorMode ? Math.min(c[0], c[1], c[2]) <= BG_LIGHTNESS : lum(c) < INK_THRESHOLD;
+        if (isInk) { inkIdx.push((y + 1) * w + x + 1); inkCol.push(c); }
+      }
+    }
+    if (!inkIdx.length) return [];
+
+    // One binary layer per palette colour.
+    const palette = colorMode ? paletteOf(inkCol, MAX_COLORS) : [[0, 0, 0]];
+    const layers = palette.map(function () { return new Uint8Array(w * h); });
+    const counts = palette.map(function () { return 0; });
+    inkIdx.forEach(function (i, n) {
+      let best = 0;
+      for (let c = 1; c < palette.length; c++) if (colorDist2(inkCol[n], palette[c]) < colorDist2(inkCol[n], palette[best])) best = c;
+      if (colorMode) best = snapEdgePixel(inkCol[n], palette, best);
+      if (best < 0) return;   // a faint edge against the white background
+      layers[best][i] = 1;
+      counts[best]++;
+    });
+
+    // Fit the grid inside the area, centred.
+    const scale = Math.min(area.w / gw, area.h / gh);
+    const ox = area.x + (area.w - gw * scale) / 2, oy = area.y + (area.h - gh * scale) / 2;
+    const order = palette.map(function (_, c) { return c; })
+      .sort(function (a, b) { return lum(palette[b]) - lum(palette[a]); });   // light first
+
+    const strokes = [];
+    order.forEach(function (c, rank) {
+      if (counts[c] < MIN_LAYER_PX) return;
+      // Extra width (grid px) so lighter fills tuck under the darker outlines drawn on
+      // top. Only thick parts get it: thin lines stay true to the image.
+      const darkest = rank === order.length - 1;
+      const nb = [-1, 1, -w, w, -w - 1, -w + 1, w - 1, w + 1];
+      const skelDegree = function (i) {
+        let d = 0;
+        for (let k = 0; k < 8; k++) d += g[i + nb[k]];
+        return d;
+      };
+      const g = layers[c];
+      const dist = distanceTransform(g, w, h);
+      const comps = componentPeaks(g, w, dist);
+      thin(g, w, h);
+      // Thinning can erase solid blobs (e.g. a filled disc) entirely; put back each
+      // vanished shape's thickest point so it is redrawn as one round stroke.
+      const alive = new Uint8Array(comps.peaks.length + 1);
+      for (let i = 0; i < g.length; i++) if (g[i]) alive[comps.labels[i]] = 1;
+      comps.peaks.forEach(function (p, n) { if (!alive[n + 1]) g[p] = 1; });
+      const color = toHex(palette[c]);
+      traceSkeleton(g, w, h).forEach(function (line) {
+        // Local line width from the image, in grid px.
+        const widths = line.map(function (i) { return Math.max(1, 2 * dist[i] / 3 - 0.5); });
+        // Where lines cross or branch, the measured width bulges (a blot at every
+        // knot of a net); use the narrower of the neighbouring widths there instead.
+        line.forEach(function (i, k) {
+          if (line.length > 2 && skelDegree(i) >= 3) {
+            const prev = widths[Math.max(0, k - 1)], next = widths[Math.min(line.length - 1, k + 1)];
+            widths[k] = Math.min(widths[k], k === 0 ? next : k === line.length - 1 ? prev : Math.min(prev, next));
+          }
+        });
+        const pts = line.map(function (i, k) {
+          const base = widths[k];
+          return {
+            x: ox + ((i % w) - 1 + 0.5) * scale,
+            y: oy + (Math.floor(i / w) - 1 + 0.5) * scale,
+            w: (base + (!darkest && base > 4 ? 2.5 : 0)) * scale
+          };
+        });
+        if (pts.length === 1 && pts[0].w < 2 * scale) return;   // lone speck
+        const simple = simplify(pts, Math.min(0.75, scale * 0.6));
+        const size = simple.reduce(function (m, p) { return Math.max(m, p.w); }, 0);
+        strokes.push({ kind: 'stroke', points: simple, size: size, variable: true, color: color, erase: false, group: group });
+      });
+    });
+    return strokes;
+  }
+
+  // ---- Region replacement ----
+
+  // Liang–Barsky: [t0, t1] of segment a→b inside rect r, or null.
+  function clipInterval(a, b, r) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const p = [-dx, dx, -dy, dy];
+    const q = [a.x - r.x, r.x + r.w - a.x, a.y - r.y, r.y + r.h - a.y];
+    let t0 = 0, t1 = 1;
+    for (let k = 0; k < 4; k++) {
+      if (p[k] === 0) {
+        if (q[k] < 0) return null;
+      } else {
+        const t = q[k] / p[k];
+        if (p[k] < 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+      }
+    }
+    return t0 > t1 ? null : [t0, t1];
+  }
+
+  // Splits a stroke at the edges of rect r into the pieces inside and outside it.
+  function splitByRect(stroke, r) {
+    const pts = stroke.points;
+    if (pts.length === 1) {
+      return inRect(pts[0], r) ? { inside: [stroke], outside: [] } : { inside: [], outside: [stroke] };
+    }
+    const lerp = function (a, b, t) {
+      const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      if (a.w !== undefined) p.w = a.w + (b.w - a.w) * t;
+      return p;
+    };
+    const add = function (arr, p) {
+      const last = arr[arr.length - 1];
+      if (!last || last.x !== p.x || last.y !== p.y) arr.push(p);
+    };
+    const inside = [], outside = [];
+    let curIn = [], curOut = [];
+    const flushIn = function () { if (curIn.length > 1) inside.push(curIn); curIn = []; };
+    const flushOut = function () { if (curOut.length > 1) outside.push(curOut); curOut = []; };
+    for (let j = 1; j < pts.length; j++) {
+      const a = pts[j - 1], b = pts[j];
+      const t = clipInterval(a, b, r);
+      if (!t) {
+        flushIn();
+        add(curOut, a); add(curOut, b);
+        continue;
+      }
+      const pa = lerp(a, b, t[0]), pb = lerp(a, b, t[1]);
+      if (t[0] > 0) { add(curOut, a); add(curOut, pa); }
+      flushOut();
+      add(curIn, pa); add(curIn, pb);
+      if (t[1] < 1) {
+        flushIn();
+        add(curOut, pb); add(curOut, b);
+      }
+    }
+    flushIn();
+    flushOut();
+    const toStroke = function (p) { return Object.assign({}, stroke, { points: p }); };
+    return { inside: inside.map(toStroke), outside: outside.map(toStroke) };
+  }
+
+  // The parts of a stroke that lie outside rect r (0, 1 or several strokes).
+  function cutOutRect(stroke, r) {
+    return splitByRect(stroke, r).outside;
+  }
+
+  function drawItem(item) {
+    drawStroke(item);
+  }
+
+  function redraw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // While dragging a selection, draw it at its offset (committed on mouseup).
+    const off = drag && drag.mode === 'move' ? drag.offset : null;
+    items.forEach(function (item, i) {
+      if (off && selection.has(i)) {
+        ctx.save();
+        ctx.translate(off.x, off.y);
+        drawItem(item);
+        ctx.restore();
+      } else {
+        drawItem(item);
+      }
+    });
+    if (current) drawItem(current);
+  }
+
+  function updateButtons() {
+    undoBtn.disabled = undoStack.length === 0;
+    clearBtn.disabled = items.length === 0;
+    askBtn.disabled = items.length === 0 || asking;
+    updateRefControls();
+  }
+
+  // ---- Select / move ----
+
+  function itemBounds(item) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    item.points.forEach(function (p) {
+      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y);
+      x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+    });
+    const r = item.size / 2;
+    return { x: x0 - r, y: y0 - r, w: x1 - x0 + 2 * r, h: y1 - y0 + 2 * r };
+  }
+
+  function distToSegment(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0;
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+  }
+
+  // Topmost selectable item under p, or -1. Eraser strokes aren't selectable.
+  function hitTest(p) {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it.erase) continue;
+      const tol = it.size / 2 + HIT_TOLERANCE;
+      const pts = it.points;
+      if (pts.length === 1 ? Math.hypot(p.x - pts[0].x, p.y - pts[0].y) <= tol
+          : pts.some(function (q, j) { return j > 0 && distToSegment(p, pts[j - 1], q) <= tol; })) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  // Adds every stroke that shares a group with something already in the set.
+  function withGroups(set) {
+    const groups = new Set();
+    set.forEach(function (i) { if (items[i].group) groups.add(items[i].group); });
+    if (groups.size) items.forEach(function (it, i) { if (groups.has(it.group)) set.add(i); });
+    return set;
+  }
+
+  function intersects(a, b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  }
+
+  function translated(item, dx, dy) {
+    return Object.assign({}, item, {
+      points: item.points.map(function (p) { return Object.assign({}, p, { x: p.x + dx, y: p.y + dy }); })
+    });
+  }
+
+  function placeBox(el, r) {
+    if (!r) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.style.left = r.x + 'px';
+    el.style.top = r.y + 'px';
+    el.style.width = r.w + 'px';
+    el.style.height = r.h + 'px';
+  }
+
+  function setSelection(set) {
+    selection = set;
+    updateSelectionBox();
+  }
+
+  // Padded union bounds of the selection (at its committed position), or null.
+  function selectionBounds() {
+    if (!selection.size) return null;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    selection.forEach(function (i) {
+      const b = itemBounds(items[i]);
+      x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
+      x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h);
+    });
+    return { x: x0 - 3, y: y0 - 3, w: x1 - x0 + 6, h: y1 - y0 + 6 };
+  }
+
+  function inRect(p, r) {
+    return !!r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+  }
+
+  function updateSelectionBox() {
+    const b = selectionBounds();
+    if (!b) { placeBox(selBox, null); return; }
+    const off = drag && drag.mode === 'move' ? drag.offset : { x: 0, y: 0 };
+    placeBox(selBox, { x: b.x + off.x, y: b.y + off.y, w: b.w, h: b.h });
+  }
+
+  // Box selection selects exactly what is inside r: strokes crossing its edge are
+  // split there (no visual change, so no undo step) and only the inside pieces are
+  // selected. Inside pieces leave their AI-draw group so they move independently.
+  function selectRegion(r) {
+    const next = [], sel = new Set();
+    let split = false;
+    items.forEach(function (it, i) {
+      const keep = function () {
+        if (selection.has(i)) sel.add(next.length);
+        next.push(it);
+      };
+      if (it.erase || !intersects(itemBounds(it), r)) return keep();
+      const parts = splitByRect(it, r);
+      if (!parts.inside.length) return keep();
+      if (!parts.outside.length) {
+        sel.add(next.length);
+        next.push(it);
+        return;
+      }
+      split = true;
+      parts.outside.forEach(function (p) {
+        if (selection.has(i)) sel.add(next.length);
+        next.push(p);
+      });
+      parts.inside.forEach(function (p) {
+        sel.add(next.length);
+        next.push(Object.assign({}, p, { group: undefined }));
+      });
+    });
+    if (split) items = next;
+    setSelection(sel);
+  }
+
+  function deleteSelection() {
+    if (!selection.size) return;
+    const n = selection.size, sel = selection;
+    commit(items.filter(function (_, i) { return !sel.has(i); }));
+    addTurn('human', 'human', 'Human deleted ' + n + ' item' + (n > 1 ? 's' : '') + '.');
+  }
+
+  // ---- Tools ----
+
+  function brushTool() {
+    return toolSel.value === 'pen' || toolSel.value === 'eraser';
+  }
+
+  function onToolChange() {
+    const tool = toolSel.value;
+    setSelection(new Set());
+    if (tool !== 'region' && region) setRegion(null);   // leaving Mark region drops the marked area
+    sizeInput.disabled = !brushTool();
+    if (brushTool()) sizeInput.value = toolSizes[tool];
+    sizeVal.textContent = brushTool() ? sizeInput.value : '';
+    canvas.style.cursor = tool === 'select' ? 'default' : brushTool() ? 'none' : 'crosshair';
+    brushCursor.style.display = 'none';
+  }
+
+  function moveBrushCursor(p) {
+    if (!brushTool()) { brushCursor.style.display = 'none'; return; }
+    const d = Math.max(4, toolSizes[toolSel.value]);
+    brushCursor.style.borderColor = toolSel.value === 'eraser' ? '#c00' : '#555';
+    placeBox(brushCursor, { x: p.x - d / 2, y: p.y - d / 2, w: d, h: d });
+  }
+
+  function latestSuggestion() {
+    return suggestions.length ? suggestions[suggestions.length - 1] : '';
+  }
+
+  // The instruction box is pre-filled with the AI's suggestion; anything the human
+  // types or adds to it makes it their instruction.
+  function refPrompt() {
+    const text = refInput.value.trim();
+    const suggestion = latestSuggestion();
+    if (text) {
+      return { text: text, source: text === suggestion ? 'ai' : 'custom', edited: !!suggestion && text.indexOf(suggestion) >= 0 };
+    }
+    return suggestion ? { text: suggestion, source: 'ai' } : null;
+  }
+
+  function updateRefControls() {
+    const p = refPrompt();
+    // Guard rails: in incremental mode both buttons need a marked region; AI draw
+    // also needs a reference image and is single-use until Ask AI or a new reference.
+    const needsRegion = modeSel.value === 'incremental' && !region;
+    refBtn.disabled = !p || fetchingRef || needsRegion;
+    refBtn.title = needsRegion ? 'Mark a region on the canvas first' : '';
+    let hint = !p
+      ? 'Ask the AI for a suggestion, or type your own instruction.'
+      : p.source === 'ai'
+        ? 'Using the AI suggestion. Edit or add to it with your own ideas.'
+        : p.edited ? 'Using the AI suggestion with your additions.' : 'Using your instruction.';
+    let drawBlock = '';
+    if (needsRegion) drawBlock = 'Incremental mode: mark a region on the canvas first.';
+    else if (!currentRef) drawBlock = 'Generate a reference image before using AI draw.';
+    else if (aiDrawSpent) drawBlock = 'AI draw used. Click Ask AI or Get reference image to enable it again.';
+    if (drawBlock) hint += ' ' + drawBlock;
+    refHint.textContent = hint;
+    drawBtn.disabled = !!drawBlock || fetchingRef;
+    drawBtn.title = drawBlock;
+  }
+
+  // Typical pen width of the human's own strokes (median), else the current pen size.
+  function humanPenSize() {
+    const sizes = items
+      .filter(function (it) { return !it.erase && !it.group; })
+      .map(function (it) { return it.size; })
+      .sort(function (a, b) { return a - b; });
+    return sizes.length ? sizes[Math.floor(sizes.length / 2)] : toolSizes.pen;
+  }
+
+  // How heavy the pen looks relative to where the image will go, as a prompt hint.
+  function lineWeight() {
+    const area = modeSel.value === 'incremental' && region ? region
+      : { w: canvas.clientWidth, h: canvas.clientHeight };
+    const ratio = humanPenSize() / Math.max(1, Math.min(area.w, area.h));
+    return ratio < 0.008 ? 'very_thin' : ratio < 0.018 ? 'thin' : ratio < 0.035 ? 'medium'
+      : ratio < 0.06 ? 'bold' : 'very_bold';
+  }
+
+  function setRegion(r) {
+    region = r;
+    if (!r) {
+      regionBox.style.display = 'none';
+    } else {
+      regionBox.style.display = 'block';
+      regionBox.style.left = r.x + 'px';
+      regionBox.style.top = r.y + 'px';
+      regionBox.style.width = r.w + 'px';
+      regionBox.style.height = r.h + 'px';
+    }
+    updateRefControls();
+  }
+
+  function rectFrom(a, b) {
+    const x0 = Math.max(0, Math.min(a.x, b.x, canvas.clientWidth));
+    const y0 = Math.max(0, Math.min(a.y, b.y, canvas.clientHeight));
+    const x1 = Math.min(canvas.clientWidth, Math.max(a.x, b.x));
+    const y1 = Math.min(canvas.clientHeight, Math.max(a.y, b.y));
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+
+  function loadImage(src) {
+    return new Promise(function (resolve, reject) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = function () { resolve(img); };
+      img.onerror = function () { reject(new Error('Could not load the generated image (blocked or expired URL).')); };
+      img.src = src;
+    });
+  }
+
+  // Traces the current reference image into strokes and places them: into the
+  // marked region (incremental), replacing whatever was drawn there, or across
+  // the whole canvas (overwrite), replacing everything. No extra image-model call.
+  function aiDraw() {
+    const mode = modeSel.value;
+    if (drawBtn.disabled) return;
+    const area = mode === 'incremental'
+      ? Object.assign({}, region)
+      : { x: 0, y: 0, w: canvas.clientWidth, h: canvas.clientHeight };
+    let traced;
+    try {
+      traced = imageToStrokes(currentRef.img, area, nextGroup++, currentRef.color);
+    } catch (err) {
+      showCurrentRef('Could not convert the reference image into strokes: ' + err.message);
+      return;
+    }
+    if (!traced.length) {
+      showCurrentRef('The reference image has no dark lines to trace. Try getting a new reference image.');
+      return;
+    }
+    const kept = mode === 'incremental'
+      ? items.reduce(function (acc, it) { return acc.concat(cutOutRect(it, area)); }, [])
+      : [];
+    aiDrawSpent = true;
+    commit(kept.concat(traced));
+    if (mode === 'incremental') setRegion(null);
+    const p = currentRef.prompt;
+    addTurn(p.source === 'custom' ? 'human' : 'ai', 'ai',
+      '[' + mode + '] ' + p.text + ' (' + traced.length + ' stroke' + (traced.length > 1 ? 's' : '') + ')',
+      currentRef.url);
+  }
+
+  function setRefResult(className, text) {
+    refResult.textContent = '';
+    const el = document.createElement('div');
+    el.className = className;
+    if (className === 'loading') {
+      const s = document.createElement('span');
+      s.className = 'spinner';
+      el.appendChild(s);
+    }
+    el.appendChild(document.createTextNode(text));
+    refResult.appendChild(el);
+  }
+
+  // Shows the current reference image, optionally with an error above it.
+  function showCurrentRef(errorText) {
+    if (errorText) setRefResult('error', errorText); else refResult.textContent = '';
+    if (currentRef) refResult.appendChild(currentRef.img);
+  }
+
+  // What the prompt planner needs to see: the canvas with the target area outlined
+  // in red, a crop of what's currently inside the area, and the area's shape.
+  function referenceContext() {
+    const incremental = modeSel.value === 'incremental' && region;
+    const cssW = canvas.clientWidth, cssH = canvas.clientHeight;
+    const area = incremental ? region : { x: 0, y: 0, w: cssW, h: cssH };
+
+    const k = Math.min(1, 1024 / Math.max(cssW, cssH));
+    const full = document.createElement('canvas');
+    full.width = Math.round(cssW * k); full.height = Math.round(cssH * k);
+    const fctx = full.getContext('2d');
+    fctx.fillStyle = '#fff';
+    fctx.fillRect(0, 0, full.width, full.height);
+    fctx.drawImage(canvas, 0, 0, full.width, full.height);
+    if (incremental) {
+      fctx.strokeStyle = '#e11';
+      fctx.lineWidth = 3;
+      fctx.setLineDash([8, 6]);
+      fctx.strokeRect(area.x * k, area.y * k, area.w * k, area.h * k);
+    }
+    const out = {
+      mode: incremental ? 'incremental' : 'overwrite',
+      aspect: area.w / area.h,
+      area: {
+        x: Math.round(area.x), y: Math.round(area.y), w: Math.round(area.w), h: Math.round(area.h),
+        canvas_w: Math.round(cssW), canvas_h: Math.round(cssH)
+      },
+      canvas_image_base64: full.toDataURL('image/png')
+    };
+    if (incremental) {
+      const dpr = canvas.width / cssW;
+      const kc = Math.min(1, 512 / Math.max(area.w, area.h));
+      const crop = document.createElement('canvas');
+      crop.width = Math.max(1, Math.round(area.w * kc)); crop.height = Math.max(1, Math.round(area.h * kc));
+      const cctx = crop.getContext('2d');
+      cctx.fillStyle = '#fff';
+      cctx.fillRect(0, 0, crop.width, crop.height);
+      cctx.drawImage(canvas, area.x * dpr, area.y * dpr, area.w * dpr, area.h * dpr, 0, 0, crop.width, crop.height);
+      out.region_image_base64 = crop.toDataURL('image/png');
+    }
+    return out;
+  }
+
+  async function getReference() {
+    const p = refPrompt();
+    if (!p || fetchingRef || refBtn.disabled) return;
+    fetchingRef = true;
+    updateRefControls();
+    setRefResult('loading', 'Generating reference image…');
+    const color = refColor.checked;
+    try {
+      const res = await fetch(REF_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({
+          prompt: p.text,
+          turn_count: turns.length,
+          line_weight: lineWeight(),
+          color: color,
+          context: reasonings.length ? reasonings[reasonings.length - 1] : ''
+        }, referenceContext()))
+      });
+      let data = null;
+      try { data = await res.json(); } catch (_) {}
+      if (!res.ok) throw new Error((data && data.error) || 'Server returned ' + res.status);
+      if (!data || typeof data.image_url !== 'string' || !/^(https?:\/\/|data:image\/)/.test(data.image_url)) {
+        throw new Error('Unexpected response from server');
+      }
+      // Prefer the server's data-URI copy so placing it on the canvas can't taint it.
+      const img = await loadImage(data.image_data_uri || data.image_url);
+      img.alt = 'Reference image: ' + (data.subject || p.text);
+      console.debug('Reference', { subject: data.subject, image_prompt: data.image_prompt });
+      currentRef = { img: img, prompt: p, url: data.image_url, color: color };
+      aiDrawSpent = false;
+      showCurrentRef();
+      // Whoever wrote the instruction proposed the step; the human draws it.
+      addTurn(p.source === 'custom' ? 'human' : 'ai', 'human', p.text, data.image_url);
+    } catch (err) {
+      // Keep showing the previous reference (still usable) under the error.
+      showCurrentRef(err instanceof TypeError
+        ? 'Could not reach the AI server at ' + REF_API_URL + '. Is the Flask backend running?'
+        : 'Error: ' + err.message);
+    } finally {
+      fetchingRef = false;
+      updateRefControls();
+    }
+  }
+
+  // Export on a white background so transparent pixels don't read as black.
+  function canvasToBase64() {
+    const off = document.createElement('canvas');
+    off.width = canvas.width;
+    off.height = canvas.height;
+    const octx = off.getContext('2d');
+    octx.fillStyle = '#fff';
+    octx.fillRect(0, 0, off.width, off.height);
+    octx.drawImage(canvas, 0, 0);
+    return off.toDataURL('image/png');
+  }
+
+  function setPanel(className, text) {
+    const old = panel.querySelector('.placeholder, .loading, .error');
+    if (old) old.remove();
+    if (!className) return;
+    const el = document.createElement('div');
+    el.className = className;
+    if (className === 'loading') {
+      const s = document.createElement('span');
+      s.className = 'spinner';
+      el.appendChild(s);
+    }
+    el.appendChild(document.createTextNode(text));
+    panel.appendChild(el);
+    panel.scrollTop = panel.scrollHeight;
+  }
+
+  async function askAI() {
+    if (asking || items.length === 0) return;
+    asking = true;
+    updateButtons();
+    setPanel('loading', 'Thinking…');
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_base64: canvasToBase64(),
+          context: reasonings.slice(-MAX_CONTEXT_TURNS).map(function (r, i, arr) {
+            const s = suggestions[suggestions.length - arr.length + i];
+            return s ? r + ' Suggestion: ' + s : r;
+          }).join('\n')
+        })
+      });
+      let data = null;
+      try { data = await res.json(); } catch (_) {}
+      if (!res.ok) throw new Error((data && data.error) || 'Server returned ' + res.status);
+      if (!data || typeof data.reasoning !== 'string') throw new Error('Unexpected response from server');
+
+      const suggestion = typeof data.suggestion === 'string' ? data.suggestion : '';
+      // A new suggestion always replaces the instruction box; the human can edit it again.
+      if (suggestion) refInput.value = suggestion;
+      reasonings.push(data.reasoning);
+      suggestions.push(suggestion);
+      aiDrawSpent = false;
+      setPanel(null);
+      const entry = document.createElement('p');
+      entry.className = 'entry';
+      entry.textContent = suggestion
+        ? data.reasoning + '\n\nSuggestion: ' + suggestion
+        : data.reasoning;
+      panel.appendChild(entry);
+      panel.scrollTop = panel.scrollHeight;
+      addTurn('ai', 'human', entry.textContent);
+    } catch (err) {
+      const offline = err instanceof TypeError;
+      setPanel('error', offline
+        ? 'Could not reach the AI server at ' + API_URL + '. Is the Flask backend running?'
+        : 'Error: ' + err.message);
+    } finally {
+      asking = false;
+      updateButtons();
+    }
+  }
+
+  function pos(e) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  canvas.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    const p = pos(e);
+    const tool = toolSel.value;
+    if (tool === 'region') {
+      selecting = p;
+      setRegion(null);
+      return;
+    }
+    if (tool === 'select') {
+      const hit = hitTest(p);
+      // Pressing anywhere inside the current selection box drags the selection,
+      // not just exactly on a stroke's line.
+      if (!e.shiftKey && inRect(p, selectionBounds()) && (hit < 0 || selection.has(hit))) {
+        drag = { mode: 'move', start: p, offset: { x: 0, y: 0 } };
+      } else if (hit >= 0) {
+        // Shift-click adds to the selection; dragging moves everything selected.
+        if (!selection.has(hit)) {
+          setSelection(withGroups(e.shiftKey ? new Set(selection).add(hit) : new Set([hit])));
+        }
+        drag = { mode: 'move', start: p, offset: { x: 0, y: 0 } };
+      } else {
+        if (!e.shiftKey) setSelection(new Set());
+        drag = { mode: 'marquee', start: p, rect: rectFrom(p, p) };
+      }
+      return;
+    }
+    current = {
+      kind: 'stroke', points: [p], size: toolSizes[tool], erase: tool === 'eraser',
+      color: tool === 'eraser' ? undefined : penColor.value
+    };
+    redraw();
+  });
+
+  canvas.addEventListener('mousemove', function (e) {
+    const p = pos(e);
+    moveBrushCursor(p);
+    if (selecting) {
+      setRegion(rectFrom(selecting, p));
+      return;
+    }
+    if (drag) {
+      if (drag.mode === 'move') {
+        drag.offset = { x: p.x - drag.start.x, y: p.y - drag.start.y };
+        redraw();
+        updateSelectionBox();
+      } else {
+        drag.rect = rectFrom(drag.start, p);
+        placeBox(marqueeBox, drag.rect);
+      }
+      return;
+    }
+    if (toolSel.value === 'select') {
+      canvas.style.cursor = inRect(p, selectionBounds()) || hitTest(p) >= 0 ? 'move' : 'default';
+      return;
+    }
+    if (!current) return;
+    const last = current.points[current.points.length - 1];
+    current.points.push(p);
+    // draw only the new segment for responsiveness
+    drawStroke({ points: [last, p], size: current.size, erase: current.erase, color: current.color });
+  });
+
+  canvas.addEventListener('mouseleave', function () { brushCursor.style.display = 'none'; });
+
+  function endPointer() {
+    if (selecting) {
+      selecting = null;
+      if (region && (region.w < MIN_REGION || region.h < MIN_REGION)) setRegion(null);
+      return;
+    }
+    if (drag) {
+      const d = drag;
+      drag = null;
+      if (d.mode === 'move') {
+        const dx = d.offset.x, dy = d.offset.y, sel = selection;
+        if (dx || dy) {
+          commit(items.map(function (it, i) { return sel.has(i) ? translated(it, dx, dy) : it; }), true);
+          addTurn('human', 'human', 'Human moved ' + sel.size + ' item' + (sel.size > 1 ? 's' : '') + '.');
+        } else {
+          redraw();
+          updateSelectionBox();
+        }
+      } else {
+        placeBox(marqueeBox, null);
+        if (d.rect.w >= 3 || d.rect.h >= 3) selectRegion(d.rect);
+      }
+      return;
+    }
+    if (!current) return;
+    const stroke = current;
+    current = null;
+    commit(items.concat([stroke]));
+    addTurn('human', 'human', stroke.erase ? 'Human erased part of the drawing.' : 'Human drew a stroke.');
+  }
+
+  canvas.addEventListener('mouseup', endPointer);
+  // Finish the stroke or drag even if the mouse is released outside the canvas
+  window.addEventListener('mouseup', endPointer);
+
+  undoBtn.addEventListener('click', undo);
+
+  clearBtn.addEventListener('click', function () {
+    if (!items.length) return;
+    current = null;
+    commit([]);   // undoable
+  });
+
+  toolSel.addEventListener('change', onToolChange);
+  sizeInput.addEventListener('input', function () {
+    if (!brushTool()) return;
+    toolSizes[toolSel.value] = Number(sizeInput.value);
+    sizeVal.textContent = sizeInput.value;
+  });
+
+  window.addEventListener('keydown', function (e) {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      undo();
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && selection.size) {
+      e.preventDefault();
+      deleteSelection();
+    } else if (e.key === 'Escape') {
+      setSelection(new Set());
+    }
+  });
+
+  askBtn.addEventListener('click', askAI);
+  refBtn.addEventListener('click', function () { getReference(); });
+  drawBtn.addEventListener('click', aiDraw);
+  modeSel.addEventListener('change', function () {
+    toolSel.value = modeSel.value === 'incremental' ? 'region' : 'pen';
+    onToolChange();
+    if (modeSel.value === 'overwrite') setRegion(null);
+    updateRefControls();
+  });
+  onToolChange();
+  refInput.addEventListener('input', updateRefControls);
+  // Enter generates; Shift+Enter adds a new line.
+  refInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      getReference();
+    }
+  });
+  updateRefControls();
+
+  window.addEventListener('resize', resize);
+  resize();
+})();
+</script>
+</body>
+</html>
